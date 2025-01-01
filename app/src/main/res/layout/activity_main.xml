@@ -3,23 +3,22 @@ xmlns:android="http://schemas.android.com/apk/res/android"
 android:layout_width="match_parent"
 android:layout_height="match_parent">
 
+    <!-- Button outside the ScrollView -->
     <ScrollView
         android:id="@+id/scrollView"
         android:layout_width="match_parent"
-        android:layout_marginBottom="120dp"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        android:layout_marginBottom="120dp">
 
         <LinearLayout
             android:id="@+id/messageContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:transcriptMode="alwaysScroll"
-            android:orientation="vertical">
-        </LinearLayout>
+            android:orientation="vertical"
+            android:transcriptMode="alwaysScroll"></LinearLayout>
 
     </ScrollView>
 
-<!-- Button outside the ScrollView -->
     <Button
         android:id="@+id/startButton"
         android:layout_width="wrap_content"
@@ -27,7 +26,17 @@ android:layout_height="match_parent">
         android:layout_alignParentBottom="true"
         android:layout_centerHorizontal="true"
         android:layout_marginBottom="56dp"
-        android:text="click and talk" />
+        android:text="click and talk222" />
+
+
+    <!-- New Button -->
+    <Button
+        android:id="@+id/helloUlmButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Hello from ULM samrt"
+        android:layout_marginTop="16dp"/>
+
 
     
 </RelativeLayout>

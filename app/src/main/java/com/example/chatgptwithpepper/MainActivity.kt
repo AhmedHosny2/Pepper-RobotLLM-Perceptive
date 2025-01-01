@@ -38,7 +38,8 @@ import java.util.*
 
 @RequiresApi(Build.VERSION_CODES.DONUT)
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLifecycleCallbacks {
-
+    // declare the button
+    private lateinit var helloUlmButton: Button
     private lateinit var responseTextView: String
     private lateinit var resultText: String
     private var seclastuser = "xyz"
@@ -50,6 +51,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
     private lateinit var messageContainer: LinearLayout
     private lateinit var textToSpeech: TextToSpeech
     var activation = false
+    private var qiContext: QiContext? = null
 
 
     @DelicateCoroutinesApi
@@ -63,7 +65,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
         textToSpeech = TextToSpeech(this, this)
         messageContainer = findViewById(R.id.messageContainer)
         startButton = findViewById(R.id.startButton)
-
+        // init the button
+        helloUlmButton = findViewById(R.id.helloUlmButton)
 
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
@@ -209,9 +212,42 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
 
             }
         }
+
+        // set on click listen for the button
+        helloUlmButton.setOnClickListener {
+            sayHelloFromUlm()
+        }
+
+
     }
 
+    // declare the function to use
+    private fun sayHelloFromUlm() {
+        // Display message in UI
+        addMessage(false, "Pepper: Hello from ULM!")
 
+        // Use QiContext to make Pepper speak asynchronously
+        qiContext?.let { context ->
+            // Launch a coroutine on the IO dispatcher
+            GlobalScope.launch(Dispatchers.IO) {
+                try {
+                    SayBuilder.with(context)
+                        .withText("Hello from ULM!")
+                        .build()
+                        .run()
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Error in sayHelloFromUlm: ${e.message}")
+                    // Update UI on the main thread
+                    runOnUiThread {
+                        addMessage(true, "Pepper: Sorry, I couldn't say hello.")
+                    }
+                }
+            }
+        } ?: run {
+            // Handle the case where QiContext is not available
+            addMessage(true, "Pepper: Sorry, I'm not ready yet.")
+        }
+    }
     private fun startSpeechRecognition() {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -301,6 +337,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
     }
 
     override fun onRobotFocusGained(qiContext: QiContext?) {
+        this.qiContext = qiContext  // Store QiContext globally
+
         val systemLanguage = Locale.getDefault().language
         var greetText = ""
         greetText = if (systemLanguage == "de") {
@@ -314,6 +352,24 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
             .build()
         sayInt.run()
 
+
+
+        GlobalScope.launch(Dispatchers.IO) {
+            try {
+                SayBuilder.with(qiContext)
+                    .withText(greetText)
+                    .build()
+                    .run()
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Error in onRobotFocusGained: ${e.message}")
+                // Update UI on the main thread
+                runOnUiThread {
+                    addMessage(true, "Pepper: Sorry, I couldn't greet you.")
+                }
+            }
+        }
+
+
         while (true){
             if (activation){
                 val say = SayBuilder.with(qiContext)
@@ -326,11 +382,17 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
     }
 
     override fun onRobotFocusLost() {
-        TODO("Not yet implemented")
-    }
+        // Clear the QiContext reference
+        qiContext = null
 
+        // Optionally, provide feedback to the user
+        runOnUiThread {
+            addMessage(true, "Pepper: I've lost focus. Please wait...")
+        }
+    }
     override fun onRobotFocusRefused(reason: String?) {
-        TODO("Not yet implemented")
+        qiContext = null  // Clear QiContext when focus is lost
+
     }
 
 }
