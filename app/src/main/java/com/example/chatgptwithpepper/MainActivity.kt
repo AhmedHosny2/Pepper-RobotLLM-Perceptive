@@ -38,7 +38,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.json.JSONArray
-import java.util.*
+ import java.util.*
 
 
 @RequiresApi(Build.VERSION_CODES.DONUT)
@@ -103,6 +103,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
             override fun onEndOfSpeech() {}
             override fun onError(error: Int) {}
             @SuppressLint("SetTextI18n")
+            // this function execute chatgpt text logic
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
@@ -162,12 +163,16 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
                     Log.d("myTag", content);
                     val mediaType = "application/json".toMediaType()
                     val requestBody = content.toRequestBody(mediaType)
+                    val apiKey =  BuildConfig.OPENAI_API_KEY
 
+                    // log the api key to mkae sure it is correct
+                    Log.d("myTag", apiKey.toString());
+                    addMessage(true, apiKey.toString())
                     val request = Request.Builder()
                         .url("https://api.openai.com/v1/chat/completions")
                         .post(requestBody)
                         .addHeader("Content-Type", "application/json")
-                        .addHeader("Authorization", "Bearer sk-BUMxb1U5tb7_GCSflMR67ihzYDCI7yqGbekCP0KQY1T3BlbkFJ369mt7GouL0cBfVZy1dpT2ZkOLeWtJMYBY_TvVGWAA")
+                        .addHeader("Authorization", "Bearer $apiKey")
                         .build()
 
                     GlobalScope.launch(Dispatchers.IO) {
@@ -244,6 +249,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
         // set on click listen for the button
         helloUlmButton.setOnClickListener {
             sayHelloFromUlm()
+           val apiKey =  BuildConfig.OPENAI_API_KEY
+            // log the api key to mkae sure it is correct
+            Log.d("myTag", apiKey.toString());
+            addMessage(true, apiKey.toString())
+
         }
         // 3- set  on click
         takePicButton.setOnClickListener { takePic() }
@@ -252,6 +262,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
 
     }
 
+    // this function take picture using pepper head and display it in the image view
 
     private fun takePic() {
         if (qiContext == null) {
@@ -302,7 +313,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
 
 
 
-    // declare the function to use
+    // 4- declare the function to use
+    // this function do a very simple say functionality
+
     private fun sayHelloFromUlm() {
         // Display message in UI
         addMessage(false, "Pepper: Hello from ULM!")
@@ -329,6 +342,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
             addMessage(true, "Pepper: Sorry, I'm not ready yet.")
         }
     }
+
+    // this function add message to the chat view
     private fun startSpeechRecognition() {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
