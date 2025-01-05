@@ -217,8 +217,10 @@ class MainActivity : AppCompatActivity(),
         val body = requestBodyJson.toString().toRequestBody(mediaType)
 
         // Replace with your actual API key
-        val apiKey = BuildConfig.OPENAI_API_KEY
+//        val apiKey =
 
+            // get api key from buidl config
+        var apiKey = "sk-BUMxb1U5tb7_GCSflMR67ihzYDCI7yqGbekCP0KQY1T3BlbkFJ369mt7GouL0cBfVZy1dpT2ZkOLeWtJMYBY_TvVGWAA"
         val request = Request.Builder()
             .url("https://api.openai.com/v1/chat/completions")
             .addHeader("Content-Type", "application/json")
@@ -263,27 +265,32 @@ class MainActivity : AppCompatActivity(),
     /**
      * Pepper speaks the given text (if QiContext is available).
      */
-    private fun sayText(text: String) {
-        // Also show in logs
-        Log.d(TAG, "sayText: $text")
+    private fun sayText(text: String = "Hello from ULM!") {
+        // Also show in the chat bubble
+        runOnUiThread {
+            addMessage(false, "Pepper: $text")
+        }
 
-        // If QiContext is available, use QiSDK TTS
+        // If we have QiContext, do the actual TTS
         qiContext?.let { context ->
             GlobalScope.launch(Dispatchers.IO) {
                 try {
-                    val say: Say = SayBuilder.with(context).withText(text).build()
-                    val sayFuture: SayFuture = say.run()
-                    sayFuture.get() // Wait for completion
+                    SayBuilder.with(context)
+                        .withText(text)
+                        .build()
+                        .run()
                 } catch (e: Exception) {
-                    Log.e(TAG, "sayText error: ${e.message}")
+                    Log.e("MainActivity", "Error in sayText: ${e.message}")
+                    runOnUiThread {
+                        addMessage(true, "Pepper: Sorry, I couldn't say that.")
+                    }
                 }
             }
         } ?: run {
-            // Fallback to local TTS
-            if (textToSpeech.isSpeaking) {
-                textToSpeech.stop()
+            // If QiContext is null
+            runOnUiThread {
+                addMessage(true, "Pepper: Sorry, I'm not ready yet.")
             }
-            textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
         }
     }
 
