@@ -169,7 +169,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
                     val client = OkHttpClient()
                     val mediaType = "application/json".toMediaType()
                     val requestBody = content.toRequestBody(mediaType)
-                    val apiKey = BuildConfig.OPENAI_API_KEY
+                    val apiKey = "sk-BUMxb1U5tb7_GCSflMR67ihzYDCI7yqGbekCP0KQY1T3BlbkFJ369mt7GouL0cBfVZy1dpT2ZkOLeWtJMYBY_TvVGWAA"
 
                     Log.d("myTag", apiKey.toString())
                     // If addMessage touches UI, wrap in runOnUiThread or do it on the main thread
@@ -250,7 +250,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
         // Simple "Hello from Ulm" button
         helloUlmButton.setOnClickListener {
             sayText("Hello from Ulm")
-            val apiKey = BuildConfig.OPENAI_API_KEY
+            val apiKey ="sk-BUMxb1U5tb7_GCSflMR67ihzYDCI7yqGbekCP0KQY1T3BlbkFJ369mt7GouL0cBfVZy1dpT2ZkOLeWtJMYBY_TvVGWAA"
             Log.d("myTag", apiKey.toString())
             runOnUiThread {
                 addMessage(true, apiKey.toString())
@@ -313,7 +313,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
             val body = RequestBody.create(mediaType, jsonObject.toString())
             Log.d("SendImageToApi", "Request body created.")
                 // get api key from build config
-            val API_KEY = BuildConfig.OPENAI_API_KEY
+            val API_KEY = "sk-BUMxb1U5tb7_GCSflMR67ihzYDCI7yqGbekCP0KQY1T3BlbkFJ369mt7GouL0cBfVZy1dpT2ZkOLeWtJMYBY_TvVGWAA"
             val request = Request.Builder()
                 .url(API_URL)
                 .addHeader("Content-Type", "application/json")
