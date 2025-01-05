@@ -1,45 +1,35 @@
-<RelativeLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    tools:context=".MainActivity">
 
-    <!-- Button outside the ScrollView -->
+    <!-- Scrollable container for chat messages -->
     <ScrollView
         android:id="@+id/scrollView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_marginBottom="120dp">
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:overScrollMode="always"
+        android:scrollbars="vertical">
 
         <LinearLayout
             android:id="@+id/messageContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:transcriptMode="alwaysScroll"></LinearLayout>
-
+            android:orientation="vertical" />
     </ScrollView>
 
+    <!-- Button to start speech recognition -->
     <Button
         android:id="@+id/startButton"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:layout_centerHorizontal="true"
-        android:layout_marginBottom="56dp"
-        android:text="click and talk" />
+        android:text="Start Listening"
+        android:layout_marginTop="16dp" />
 
-
-
-
-
-
-
-
-
-
-
-
-
-</RelativeLayout>
-
-
+</LinearLayout>
