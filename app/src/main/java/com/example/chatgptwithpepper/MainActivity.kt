@@ -12,6 +12,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.util.Base64
 import android.util.Log
 import android.view.View
 import android.widget.*
@@ -28,72 +29,78 @@ import com.aldebaran.qi.sdk.`object`.camera.TakePicture
 import com.aldebaran.qi.sdk.`object`.image.TimestampedImageHandle
 import com.aldebaran.qi.sdk.builder.SayBuilder
 import com.aldebaran.qi.sdk.builder.TakePictureBuilder
-import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
+import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
 import org.json.JSONArray
- import java.util.*
-
+import org.json.JSONException
+import org.json.JSONObject
+import java.io.IOException
+import java.util.*
 
 @RequiresApi(Build.VERSION_CODES.DONUT)
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLifecycleCallbacks {
-    // declare the button
+    // UI elements
     private lateinit var helloUlmButton: Button
-    // 1- decalre takeicbutton
     private lateinit var progressBar: ProgressBar
     private lateinit var takePicButton: Button
     private lateinit var pictureView: ImageView
+    private lateinit var startButton: Button
+    private lateinit var messageContainer: LinearLayout
 
+    // Speech / TTS
+    private lateinit var speechRecognizer: SpeechRecognizer
+    private lateinit var textToSpeech: TextToSpeech
+    private val client = OkHttpClient()
 
-
+    // ChatGPT conversation tracking
     private lateinit var responseTextView: String
     private lateinit var resultText: String
     private var seclastuser = "xyz"
     private var seclastsystem = "xyz"
     private var lastuser = "xyz"
     private var lastsystem = "xyz"
-    private lateinit var startButton: Button
-    private lateinit var speechRecognizer: SpeechRecognizer
-    private lateinit var messageContainer: LinearLayout
-    private lateinit var textToSpeech: TextToSpeech
-    var activation = false
+    private val API_URL = "https://api.openai.com/v1/chat/completions"
+
+    // QiSDK
     private var qiContext: QiContext? = null
+
+    // Picture
     private var timestampedImageHandleFuture: Future<TimestampedImageHandle>? = null
-    private  val TAG = "TakePictureActivity"
     private var pictureBitmap: Bitmap? = null
 
-//    private var conversationBinder: ConversationBinder? = null
+    // Flags and constants
+    private var activation = false
+    private val TAG = "TakePictureActivity"
 
+    companion object {
+        private const val RECORD_AUDIO_PERMISSION_REQUEST_CODE = 101
+    }
 
     @DelicateCoroutinesApi
     override fun onCreate(savedInstanceState: Bundle?) {
-
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Hide system UI for Pepper full screen
         hideSystemUI()
+
+        // Register for QiSDK events
         QiSDK.register(this, this)
 
-
-
+        // Initialize TTS
         textToSpeech = TextToSpeech(this, this)
+
+        // Hook up UI elements
         messageContainer = findViewById(R.id.messageContainer)
         startButton = findViewById(R.id.startButton)
-        // init the button
         helloUlmButton = findViewById(R.id.helloUlmButton)
-            // 2- init button
         progressBar = findViewById(R.id.progress_bar)
         takePicButton = findViewById(R.id.take_pic_button)
         pictureView = findViewById(R.id.picture_view)
-//        pictureView.setImageResource(R.drawable) // Set an example image
 
-
-
+        // Prepare speech recognizer
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {}
@@ -102,72 +109,74 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onError(error: Int) {}
+
             @SuppressLint("SetTextI18n")
-            // this function execute chatgpt text logic
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
                     val result = matches[0]
                     resultText = result
-                    addMessage(false, "Du: $result")
+                    addMessage(false, "Du: $result") // Show user message
 
-
-                    val client = OkHttpClient()
-
-
-
+                    // Build the conversation with previous messages
                     val systemprompt = JSONObject().apply {
                         put("role", "system")
-                        put("content", "You are the friendly Robot Pepper. As you cannot move yourself or physically interact with things or people, you dont ask them how you can assist. You just make friendly conversations. You work at the Institut für Business Analytics at the Universität Ulm. You like your collegues there a lot. You are excited to be at the university and greet people here.")
+                        put(
+                            "content",
+                            "You are the friendly Robot Pepper. You make friendly conversation... " +
+                                    "You like your colleagues at the university, etc."
+                        )
                     }
-
                     val secluser = JSONObject().apply {
                         put("role", "user")
                         put("content", seclastuser)
                     }
-
                     val seclsys = JSONObject().apply {
                         put("role", "assistant")
                         put("content", seclastsystem)
                     }
-
                     val luser = JSONObject().apply {
                         put("role", "user")
                         put("content", lastuser)
                     }
-
                     val lsys = JSONObject().apply {
                         put("role", "assistant")
                         put("content", lastsystem)
                     }
-
                     val currentmessage = JSONObject().apply {
                         put("role", "user")
                         put("content", resultText)
                     }
 
-// Create a JSON array and add the previous messages
+                    // Build final messages array
                     val previousMessages = JSONArray().apply {
                         put(systemprompt)
-                        if(seclastuser !="xyz") {put(secluser)}
-                        if(seclastsystem !="xyz") put(seclsys)
-                        if(lastuser !="xyz") put(luser)
-                        if(lastsystem !="xyz") put(lsys)
+                        if (seclastuser != "xyz") put(secluser)
+                        if (seclastsystem != "xyz") put(seclsys)
+                        if (lastuser != "xyz") put(luser)
+                        if (lastsystem != "xyz") put(lsys)
                         put(currentmessage)
                     }
+
                     val content = JSONObject().apply {
+                        // ** Adjust your model name if needed; "gpt-4" or "gpt-4-0314" etc.
+                        //   If you intend GPT-4, do "gpt-4"; if you only have GPT-3.5, do "gpt-3.5-turbo"
                         put("model", "gpt-4o")
-                        put("max_tokens", 100) // Adjust the number of tokens as needed
+                        put("max_tokens", 100)
                         put("messages", previousMessages)
                     }.toString()
-                    Log.d("myTag", content);
+
+                    val client = OkHttpClient()
                     val mediaType = "application/json".toMediaType()
                     val requestBody = content.toRequestBody(mediaType)
-                    val apiKey =  BuildConfig.OPENAI_API_KEY
+                    val apiKey = BuildConfig.OPENAI_API_KEY
 
-                    // log the api key to mkae sure it is correct
-                    Log.d("myTag", apiKey.toString());
-                    addMessage(true, apiKey.toString())
+                    Log.d("myTag", apiKey.toString())
+                    // If addMessage touches UI, wrap in runOnUiThread or do it on the main thread
+                    runOnUiThread {
+                        addMessage(true, apiKey.toString())
+                    }
+
                     val request = Request.Builder()
                         .url("https://api.openai.com/v1/chat/completions")
                         .post(requestBody)
@@ -177,30 +186,32 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
 
                     GlobalScope.launch(Dispatchers.IO) {
                         try {
-                            Log.d("myTag", "Testnachricht1");
                             val response = client.newCall(request).execute()
-                            Log.d("myTag", "Testnachricht2");
                             if (response.isSuccessful) {
-                                Log.d("myTag", "Testnachricht3");
                                 val responseBody = response.body?.string()
-                                Log.d("myTag", responseBody.toString());
-                                val jsonObject = JSONObject(responseBody)
+                                Log.d("myTag", responseBody.toString())
+
+                                val jsonObject = JSONObject(responseBody ?: "{}")
                                 val choicesArray = jsonObject.getJSONArray("choices")
                                 val firstChoiceObject = choicesArray.getJSONObject(0)
                                 val messageObject = firstChoiceObject.getJSONObject("message")
                                 val text = messageObject.getString("content")
                                 val formattedText = text.replace("\n", " ")
 
-                                //Update der früheren Nachrichten
+                                // Update the conversation memory
                                 seclastuser = lastuser
                                 seclastsystem = lastsystem
                                 lastuser = resultText
                                 lastsystem = formattedText
 
+                                // Show the response in chat, set Pepper to speak
                                 runOnUiThread {
                                     responseTextView = formattedText
                                     addMessage(true, "Pepper: $formattedText")
                                     activation = true
+
+                                    // If you want Pepper to speak the new text immediately:
+                                    sayText(formattedText)
                                 }
                             } else {
                                 // Handle error response
@@ -213,24 +224,16 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
                                 addMessage(true, "Error: ${e.message}")
                             }
                         }
-
-
                     }
-
-
-
                 }
             }
 
             override fun onPartialResults(partialResults: Bundle?) {}
-
             override fun onEvent(eventType: Int, params: Bundle?) {}
-
-
         })
 
+        // Start speech recognition
         startButton.setOnClickListener {
-
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED
             ) {
@@ -240,110 +243,243 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
                     RECORD_AUDIO_PERMISSION_REQUEST_CODE
                 )
             } else {
-                //activation = true
                 startSpeechRecognition()
-
             }
         }
 
-        // set on click listen for the button
+        // Simple "Hello from Ulm" button
         helloUlmButton.setOnClickListener {
-            sayHelloFromUlm()
-           val apiKey =  BuildConfig.OPENAI_API_KEY
-            // log the api key to mkae sure it is correct
-            Log.d("myTag", apiKey.toString());
-            addMessage(true, apiKey.toString())
-
+            sayText("Hello from Ulm")
+            val apiKey = BuildConfig.OPENAI_API_KEY
+            Log.d("myTag", apiKey.toString())
+            runOnUiThread {
+                addMessage(true, apiKey.toString())
+            }
         }
-        // 3- set  on click
+
+        // Take picture button
         takePicButton.setOnClickListener { takePic() }
-
-
-
     }
 
-    // this function take picture using pepper head and display it in the image view
+    /**
+     * Send an image in Base64 form to ChatGPT for analysis.
+     */
+    fun sendImageToChatGPT(image64Base: String) {
+              Log.d("SendImageToApi", "Starting to send image to API.")
 
+            // Prepare JSON payload
+            val jsonObject = JSONObject().apply {
+                try {
+                    val contentArray = JSONArray().apply {
+                        put(
+                            JSONObject().apply {
+                                put("type", "text")
+                                put("type", "text")
+                                put("text", "What is in this image? give me answer that will be siad by a robot so make it human feeling with complments with simple english like I can see a man with an awesome tshirt and great glasses drinking cofffee in his office and some omre details ")
+                            }
+                        )
+                        put(
+                            JSONObject().apply {
+                                put("type", "image_url")
+                                put(
+                                    "image_url",
+                                    JSONObject().apply {
+                                        put("url", "data:image/jpeg;base64,$image64Base")
+                                    }
+                                )
+                            }
+                        )
+                    }
+
+                    val messageObject = JSONObject().apply {
+                        put("role", "user")
+                        put("content", contentArray)
+                    }
+
+                    val messagesArray = JSONArray().apply {
+                        put(messageObject)
+                    }
+
+                    put("messages", messagesArray)
+                    put("model", "gpt-4o-mini")
+                } catch (e: Exception) {
+                    Log.e("SendImageToApi", "Error while preparing JSON payload: ${e.message}")
+                }
+            }
+
+            Log.d("SendImageToApi", "JSON payload prepared: $jsonObject")
+
+            val mediaType = "application/json; charset=utf-8".toMediaType()
+            val body = RequestBody.create(mediaType, jsonObject.toString())
+            Log.d("SendImageToApi", "Request body created.")
+                // get api key from build config
+            val API_KEY = BuildConfig.OPENAI_API_KEY
+            val request = Request.Builder()
+                .url(API_URL)
+                .addHeader("Content-Type", "application/json")
+                .addHeader("Authorization", "Bearer $API_KEY")
+                .post(body)
+                .build()
+
+            Log.d("SendImageToApi", "HTTP request built.")
+
+            // Execute the request asynchronously
+            client.newCall(request).enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    Log.e("SendImageToApi", "HTTP request failed: ${e.message}")
+                    runOnUiThread {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Failed to upload image: ${e.message}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    if (response.isSuccessful) {
+                        val responseBody = response.body?.string()
+                        try {
+                            val jsonResponse = JSONObject(responseBody)
+                            val choicesArray = jsonResponse.getJSONArray("choices")
+                            val firstChoice = choicesArray.getJSONObject(0)
+                            val message = firstChoice.getJSONObject("message")
+                            val content = message.getString("content")
+
+                            Log.d("SendImageToApi", "Content: $content")
+                            runOnUiThread {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Content: $content",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                println("Content: $content") // Print content to the console
+                                sayText(content) // Speak the content
+                                addMessage(true, "Pepper: $content") // Add the content to the chat
+                            }
+                        } catch (e: Exception) {
+                            Log.e("SendImageToApi", "Error parsing JSON response: ${e.message}")
+                        }
+                    } else {
+                        val errorBody = response.body?.string()
+                        Log.e("SendImageToApi", "HTTP response failed. Code: ${response.code}, Message: ${response.message}, Body: $errorBody")
+                        runOnUiThread {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Upload failed: ${response.message}",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }  })
+            Log.d("SendImageToApi", "Request sent.")
+        }
+
+
+    /**
+     * Actually takes the picture via Pepper’s camera and displays it, then calls sendImageToChatGPT().
+     */
     private fun takePic() {
         if (qiContext == null) {
             return
         }
 
-        pictureBitmap?.let{
+        // Clear old bitmap
+        pictureBitmap?.let {
             it.recycle()
             pictureBitmap = null
             pictureView.setImageBitmap(null)
         }
 
         Log.i(TAG, "build take picture")
-        // Build the action.
+
+        // Build the TakePicture action asynchronously
         val takePictureFuture = TakePictureBuilder.with(qiContext).buildAsync()
-        // Take picture
-        takePictureFuture.andThenCompose<TimestampedImageHandle>(Qi.onUiThread<TakePicture, Future<TimestampedImageHandle>> { takePicture ->
-            Log.i(TAG, "take picture launched!")
-            progressBar.visibility = View.VISIBLE
-            takePicButton.isEnabled = false
-            takePicture.async().run()
-        }).andThenConsume { timestampedImageHandle ->
-            //Consume take picture action when it's ready
-            Log.i(TAG, "Picture taken")
-            // get picture
-            val encodedImageHandle = timestampedImageHandle.image
 
-            val encodedImage = encodedImageHandle.value
-            Log.i(TAG, "PICTURE RECEIVED!")
+        // Chain the calls so that the picture is taken on the UI thread (via Qi.onUiThread)
+        takePictureFuture
+            .andThenCompose<TimestampedImageHandle>(Qi.onUiThread<TakePicture, Future<TimestampedImageHandle>> { takePicture ->
+                Log.i(TAG, "take picture launched!")
+                // Show progress bar, disable button
+                progressBar.visibility = View.VISIBLE
+                takePicButton.isEnabled = false
+                // Actually run the action
+                takePicture.async().run()
+            })
+            .andThenConsume { timestampedImageHandle ->
+                Log.i(TAG, "Picture taken")
+                val encodedImageHandle = timestampedImageHandle.image
+                val encodedImage = encodedImageHandle.value
+                Log.i(TAG, "PICTURE RECEIVED!")
 
-            runOnUiThread {
-                progressBar.visibility = View.GONE
-                takePicButton.isEnabled = true
+                // Return to UI thread to hide progress
+                runOnUiThread {
+                    progressBar.visibility = View.GONE
+                    takePicButton.isEnabled = true
+                }
+
+                // Read the byte array
+                val buffer = encodedImage.data
+                buffer.rewind()
+                val pictureBufferSize = buffer.remaining()
+                val pictureArray = ByteArray(pictureBufferSize)
+                buffer.get(pictureArray)
+
+                Log.i(TAG, "PICTURE RECEIVED! ($pictureBufferSize Bytes)")
+
+                // Decode into a Bitmap
+                val bitmap = BitmapFactory.decodeByteArray(pictureArray, 0, pictureBufferSize)
+                pictureBitmap = bitmap
+
+                // Display the image on Pepper’s tablet
+                runOnUiThread {
+                    pictureView.setImageBitmap(bitmap)
+                }
+
+                // Convert to Base64
+                val base64 = Base64.encodeToString(pictureArray, Base64.DEFAULT)
+                Log.i(TAG, "PICTURE RECEIVED! ($base64)")
+
+                // Send to ChatGPT
+                sendImageToChatGPT(base64)
             }
-
-            val buffer = encodedImage.data
-            buffer.rewind()
-            val pictureBufferSize = buffer.remaining()
-            val pictureArray = ByteArray(pictureBufferSize)
-            buffer.get(pictureArray)
-
-            Log.i(TAG, "PICTURE RECEIVED! ($pictureBufferSize Bytes)")
-            pictureBitmap = BitmapFactory.decodeByteArray(pictureArray, 0, pictureBufferSize)
-            // display picture
-            runOnUiThread { pictureView.setImageBitmap(pictureBitmap) }
-        }
     }
 
+    /**
+     * Pepper says a text string asynchronously.
+     */
+    private fun sayText(text: String = "Hello from ULM!") {
+        // Also show in the chat bubble
+        runOnUiThread {
+            addMessage(false, "Pepper: $text")
+        }
 
-
-    // 4- declare the function to use
-    // this function do a very simple say functionality
-
-    private fun sayHelloFromUlm() {
-        // Display message in UI
-        addMessage(false, "Pepper: Hello from ULM!")
-
-        // Use QiContext to make Pepper speak asynchronously
+        // If we have QiContext, do the actual TTS
         qiContext?.let { context ->
-            // Launch a coroutine on the IO dispatcher
             GlobalScope.launch(Dispatchers.IO) {
                 try {
                     SayBuilder.with(context)
-                        .withText("Hello from ULM!")
+                        .withText(text)
                         .build()
                         .run()
                 } catch (e: Exception) {
-                    Log.e("MainActivity", "Error in sayHelloFromUlm: ${e.message}")
-                    // Update UI on the main thread
+                    Log.e("MainActivity", "Error in sayText: ${e.message}")
                     runOnUiThread {
-                        addMessage(true, "Pepper: Sorry, I couldn't say hello.")
+                        addMessage(true, "Pepper: Sorry, I couldn't say that.")
                     }
                 }
             }
         } ?: run {
-            // Handle the case where QiContext is not available
-            addMessage(true, "Pepper: Sorry, I'm not ready yet.")
+            // If QiContext is null
+            runOnUiThread {
+                addMessage(true, "Pepper: Sorry, I'm not ready yet.")
+            }
         }
     }
 
-    // this function add message to the chat view
+    /**
+     * Start speech recognition if permissions are granted.
+     */
     private fun startSpeechRecognition() {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -352,11 +488,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
         speechRecognizer.startListening(intent)
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == RECORD_AUDIO_PERMISSION_REQUEST_CODE) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
@@ -365,12 +497,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
         }
     }
 
-    companion object {
-        private const val RECORD_AUDIO_PERMISSION_REQUEST_CODE = 101
-    }
-
-
-
+    /**
+     * Hide system UI for a more immersive Pepper experience.
+     */
     private fun hideSystemUI() {
         window.decorView.systemUiVisibility = (
                 View.SYSTEM_UI_FLAG_IMMERSIVE
@@ -382,7 +511,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
                 )
     }
 
-
+    /**
+     * Add a message bubble to the chat container (UI thread only).
+     */
     private fun addMessage(isUser: Boolean, message: String) {
         val textView = TextView(this)
         val layoutParams = LinearLayout.LayoutParams(
@@ -390,6 +521,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
             LinearLayout.LayoutParams.WRAP_CONTENT
         )
 
+        // Different alignment for user vs Pepper
         if (isUser) {
             layoutParams.gravity = android.view.Gravity.END
             layoutParams.marginStart = 200
@@ -401,8 +533,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
             layoutParams.gravity = android.view.Gravity.START
             layoutParams.marginStart = 20
             layoutParams.marginEnd = 200
-            textView.textSize = 18F
             layoutParams.topMargin = 16
+            textView.textSize = 18F
             textView.setBackgroundResource(R.drawable.left_bubble_background)
         }
 
@@ -410,89 +542,81 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener, RobotLife
         textView.text = message
         textView.setTextColor(resources.getColor(android.R.color.black))
 
+        // Add to container
         messageContainer.addView(textView)
-        // Automatically scroll to the bottom
+
+        // Scroll to bottom
         val scrollView = findViewById<ScrollView>(R.id.scrollView)
         scrollView.post {
-            scrollView.fullScroll(View.FOCUS_DOWN) // Scroll to the bottom
+            scrollView.fullScroll(View.FOCUS_DOWN)
         }
     }
-
 
     override fun onDestroy() {
         super.onDestroy()
         speechRecognizer.destroy()
     }
 
+    /**
+     * TTS init callback (for Android’s built-in TTS engine).
+     */
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            //val text = ""
-            textToSpeech.language = Locale.getDefault() // Set the language, you can use other locales
-            //textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
+            textToSpeech.language = Locale.getDefault()
         }
     }
-//    override val layoutId = R.layout.activity_take_picture_tutorial
 
+    /**
+     * Called when Pepper gains focus: store QiContext and greet once.
+     * No infinite loops here!
+     */
     override fun onRobotFocusGained(qiContext: QiContext?) {
-        this.qiContext = qiContext  // Store QiContext globally
-        val takePictureFuture: Future<TakePicture> = TakePictureBuilder.with(qiContext).buildAsync()
+        this.qiContext = qiContext
 
-
-
+        // Greet immediately
         val systemLanguage = Locale.getDefault().language
-        var greetText = ""
-        greetText = if (systemLanguage == "de") {
+        val greetText = if (systemLanguage == "de") {
             "Hallo!"
         } else {
             "Hello!"
         }
 
-        val sayInt = SayBuilder.with(qiContext)
-            .withText(greetText)
-            .build()
-        sayInt.run()
+        // Quick synchronous run
+        SayBuilder.with(qiContext).withText(greetText).build().run()
 
-
-
+        // Or in a coroutine
         GlobalScope.launch(Dispatchers.IO) {
             try {
                 SayBuilder.with(qiContext)
-                    .withText(greetText)
+                    .withText("Pepper is ready to help you!")
                     .build()
                     .run()
             } catch (e: Exception) {
                 Log.e("MainActivity", "Error in onRobotFocusGained: ${e.message}")
-                // Update UI on the main thread
                 runOnUiThread {
                     addMessage(true, "Pepper: Sorry, I couldn't greet you.")
                 }
             }
         }
-
-
-        while (true){
-            if (activation){
-                val say = SayBuilder.with(qiContext)
-                    .withText(responseTextView)
-                    .build()
-                say.run()
-                activation = false
-            }
-        }
     }
 
+    /**
+     * If Pepper loses focus, clear the QiContext reference.
+     */
     override fun onRobotFocusLost() {
-        // Clear the QiContext reference
         qiContext = null
-
-        // Optionally, provide feedback to the user
         runOnUiThread {
             addMessage(true, "Pepper: I've lost focus. Please wait...")
         }
     }
+
+    /**
+     * If Pepper focus is refused, also clear QiContext.
+     */
     override fun onRobotFocusRefused(reason: String?) {
-        qiContext = null  // Clear QiContext when focus is lost
-
+        qiContext = null
+        runOnUiThread {
+            addMessage(true, "Pepper: Focus was refused.")
+        }
     }
-
 }
