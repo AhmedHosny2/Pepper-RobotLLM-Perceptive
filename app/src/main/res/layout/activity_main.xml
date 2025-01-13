@@ -21,15 +21,17 @@
             android:id="@+id/messageContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:orientation="vertical" >
+
+            <Button
+                android:id="@+id/startButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Start Listening" />
+        </LinearLayout>
     </ScrollView>
 
     <!-- Button to start speech recognition -->
-    <Button
-        android:id="@+id/startButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Start Listening"
-        android:layout_marginTop="16dp" />
 
 </LinearLayout>
