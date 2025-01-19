@@ -1,9 +1,13 @@
+// MainActivity.kt
+
 package com.example.chatgptwithpepper
 
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -16,7 +20,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.*
@@ -44,11 +47,12 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     // Flags to manage speech recognition state
     private var isEndOfSpeech = false
     private var isListening = false
+    private var isTriggerDetected = false
 
     companion object {
         private const val TAG = "MainActivity"
         private const val RECORD_AUDIO_PERMISSION_REQUEST_CODE = 101
-        private const val TRIGGER_PHRASE = "hey zack" // Updated trigger phrase
+        private const val TRIGGER_PHRASE = "hey zack" // Trigger phrase
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -131,7 +135,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     "Recognizer is busy. Please wait a moment."
                 }
                 SpeechRecognizer.ERROR_CLIENT -> {
-                    "Client error. Possibly no mic input in emulator."
+                    "Client error. Possibly no mic input."
                 }
                 else -> {
                     "An unknown error occurred."
@@ -146,10 +150,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 SpeechRecognizer.ERROR_NO_MATCH -> {
                     // Restart listening after a short delay if end of speech was detected
                     if (isEndOfSpeech) {
-                        lifecycleScope.launch {
-                            delay(1000) // Delay to prevent rapid restarts
+                        Handler(Looper.getMainLooper()).postDelayed({
                             startListening()
-                        }
+                        }, 1000) // 1 second delay
                     } else {
                         Log.d(TAG, "Error occurred before end of speech. Not restarting.")
                     }
@@ -165,8 +168,19 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             if (!matches.isNullOrEmpty()) {
                 val transcript = matches[0].trim()
                 Log.d(TAG, "Recognized Speech: $transcript")
-                addMessage(true, "You: $transcript")
-                sendTextToChatGpt(transcript)
+
+                if (isTriggerDetected) {
+                    // Process user command
+                    addMessage(true, "You: $transcript")
+                    sendTextToChatGpt(transcript)
+                    isTriggerDetected = false
+                } else {
+                    // Check if transcript contains trigger phrase
+                    if (transcript.contains(TRIGGER_PHRASE, ignoreCase = true)) {
+                        informUserSpeechRecognized()
+                        isTriggerDetected = true
+                    }
+                }
             } else {
                 Toast.makeText(
                     this@MainActivity,
@@ -175,10 +189,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 ).show()
             }
             // Restart listening to keep the conversation going
-            lifecycleScope.launch {
-                delay(500)
+            Handler(Looper.getMainLooper()).postDelayed({
                 startListening()
-            }
+            }, 500) // 0.5 second delay
         }
 
         override fun onPartialResults(partialResults: Bundle) {
@@ -189,8 +202,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 Log.d(TAG, "Partial Result: $partialTranscript")
 
                 // Check for the trigger phrase "hey zack"
-                if (partialTranscript.contains(TRIGGER_PHRASE, ignoreCase = true)) {
+                if (!isTriggerDetected && partialTranscript.contains(TRIGGER_PHRASE, ignoreCase = true)) {
                     informUserSpeechRecognized()
+                    isTriggerDetected = true
                 }
             }
         }
@@ -204,11 +218,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
      * Inform the user that "hey zack" was recognized
      */
     private fun informUserSpeechRecognized() {
-        val message = "Hey Zack recognized your speech!"
+        val message = "Hey Zack recognized your speech! How can I assist you today?"
         addMessage(false, "Pepper: $message")
+        // here we need to start the text to spech tor
         textToSpeech.speak(message, TextToSpeech.QUEUE_FLUSH, null, null)
         Log.d(TAG, "Trigger phrase detected: $TRIGGER_PHRASE")
     }
+
 
     /**
      * Check for audio permissions and start listening if granted
@@ -264,11 +280,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 // Adjust timeout periods
                 putExtra(
                     RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    4000 // Increased from 2000ms
+                    4000 // 4 seconds
                 )
                 putExtra(
                     RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
-                    2000 // Increased from 1000ms
+                    2000 // 2 seconds
                 )
             }
             speechRecognizer.startListening(intent)
