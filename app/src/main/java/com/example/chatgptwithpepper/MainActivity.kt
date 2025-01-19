@@ -3,6 +3,7 @@
 package com.example.chatgptwithpepper
 
 import android.Manifest
+import kotlinx.coroutines.*
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -43,7 +44,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     // OkHttp Client for API calls
     private val client = OkHttpClient()
-
+    private var threadId = "";
     // Flags to manage speech recognition state
     private var isEndOfSpeech = false
     private var isListening = false
@@ -60,239 +61,60 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         setContentView(R.layout.activity_main)
         hideSystemUI()
 
-        // Initialize TextToSpeech
-        textToSpeech = TextToSpeech(this, this)
+        lifecycleScope.launch {
+            try {
+                // Call the function and wait for its result
+                val threadId = CreateChatGPTThread()
+                Log.d("yaya", "Thread id: $threadId")
 
-        // Initialize UI elements
-        startButton = findViewById(R.id.startButton)
-        messageContainer = findViewById(R.id.messageContainer)
-        scrollView = findViewById(R.id.scrollView)
-
-        // Check if speech recognition is available
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            Toast.makeText(
-                this,
-                "Speech recognition is not available on this device.",
-                Toast.LENGTH_LONG
-            ).show()
-            startButton.isEnabled = false
-            return
-        }
-
-        // Initialize SpeechRecognizer
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
-        speechRecognizer.setRecognitionListener(recognitionListener)
-
-        // Set Start Button Click Listener
-        startButton.setOnClickListener {
-            checkAudioPermissionAndStart()
-        }
-    }
-
-    /**
-     * RecognitionListener to handle speech recognition callbacks
-     */
-    private val recognitionListener = object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) {
-            Log.d(TAG, "onReadyForSpeech")
-            isEndOfSpeech = false
-            isListening = true
-        }
-
-        override fun onBeginningOfSpeech() {
-            Log.d(TAG, "onBeginningOfSpeech")
-        }
-
-        override fun onRmsChanged(rmsdB: Float) {
-            // Optional: Handle real-time RMS changes (e.g., visualizing audio levels)
-        }
-
-        override fun onBufferReceived(buffer: ByteArray?) {
-            // Optional: Handle buffer received
-        }
-
-        override fun onEndOfSpeech() {
-            Log.d(TAG, "onEndOfSpeech")
-            isEndOfSpeech = true
-            isListening = false
-        }
-
-        override fun onError(error: Int) {
-            Log.e(TAG, "Speech recognition error: $error")
-
-            // Handle specific errors
-            val errorMessage = when (error) {
-                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
-                    "Speech timed out. Please try speaking again."
-                }
-                SpeechRecognizer.ERROR_NO_MATCH -> {
-                    "No match found. Please try again."
-                }
-                SpeechRecognizer.ERROR_NETWORK -> {
-                    "Network error. Check your connection."
-                }
-                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> {
-                    "Recognizer is busy. Please wait a moment."
-                }
-                SpeechRecognizer.ERROR_CLIENT -> {
-                    "Client error. Possibly no mic input."
-                }
-                else -> {
-                    "An unknown error occurred."
-                }
-            }
-
-            Toast.makeText(this@MainActivity, errorMessage, Toast.LENGTH_SHORT).show()
-
-            // Prevent restarting listening immediately to avoid loops
-            when (error) {
-                SpeechRecognizer.ERROR_SPEECH_TIMEOUT,
-                SpeechRecognizer.ERROR_NO_MATCH -> {
-                    // Restart listening after a short delay if end of speech was detected
-                    if (isEndOfSpeech) {
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            startListening()
-                        }, 1000) // 1 second delay
-                    } else {
-                        Log.d(TAG, "Error occurred before end of speech. Not restarting.")
-                    }
-                }
-                else -> {
-                    Log.d(TAG, "Not restarting for error code $error.")
-                }
-            }
-        }
-
-        override fun onResults(results: Bundle?) {
-            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-            if (!matches.isNullOrEmpty()) {
-                val transcript = matches[0].trim()
-                Log.d(TAG, "Recognized Speech: $transcript")
-
-                if (isTriggerDetected) {
-                    // Process user command
-                    addMessage(true, "You: $transcript")
-                    sendTextToChatGpt(transcript)
-                    isTriggerDetected = false
-                } else {
-                    // Check if transcript contains trigger phrase
-                    if (transcript.contains(TRIGGER_PHRASE, ignoreCase = true)) {
-                        informUserSpeechRecognized()
-                        isTriggerDetected = true
-                    }
-                }
-            } else {
-                Toast.makeText(
-                    this@MainActivity,
-                    "No speech recognized. Please try again.",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-            // Restart listening to keep the conversation going
-            Handler(Looper.getMainLooper()).postDelayed({
-                startListening()
-            }, 500) // 0.5 second delay
-        }
-
-        override fun onPartialResults(partialResults: Bundle) {
-            val data = partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-
-            if (!data.isNullOrEmpty()) {
-                val partialTranscript = data[0].trim()
-                Log.d(TAG, "Partial Result: $partialTranscript")
-
-                // Check for the trigger phrase "hey zack"
-                if (!isTriggerDetected && partialTranscript.contains(TRIGGER_PHRASE, ignoreCase = true)) {
-                    informUserSpeechRecognized()
-                    isTriggerDetected = true
-                }
-            }
-        }
-
-        override fun onEvent(eventType: Int, params: Bundle?) {
-            Log.d(TAG, "Speech Recognizer Event: $eventType")
-        }
-    }
-
-    /**
-     * Inform the user that "hey zack" was recognized
-     */
-    private fun informUserSpeechRecognized() {
-        val message = "Hey Zack recognized your speech! How can I assist you today?"
-        addMessage(false, "Pepper: $message")
-        // here we need to start the text to spech tor
-        textToSpeech.speak(message, TextToSpeech.QUEUE_FLUSH, null, null)
-        Log.d(TAG, "Trigger phrase detected: $TRIGGER_PHRASE")
-    }
-
-
-    /**
-     * Check for audio permissions and start listening if granted
-     */
-    private fun checkAudioPermissionAndStart() {
-        when {
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.RECORD_AUDIO
-            ) == PackageManager.PERMISSION_GRANTED -> {
-                startListening()
-            }
-            shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) -> {
-                Toast.makeText(
-                    this,
-                    "Audio permission is needed for speech recognition.",
-                    Toast.LENGTH_SHORT
-                ).show()
-                requestAudioPermission()
-            }
-            else -> {
-                requestAudioPermission()
+                // Use threadId as needed after this point
+            } catch (e: Exception) {
+                Log.e("yaya", "Error creating thread: ${e.message}")
             }
         }
     }
 
-    /**
-     * Request audio recording permission
-     */
-    private fun requestAudioPermission() {
-        requestPermissions(
-            arrayOf(Manifest.permission.RECORD_AUDIO),
-            RECORD_AUDIO_PERMISSION_REQUEST_CODE
-        )
-    }
 
     /**
-     * Start listening for user speech
+     * Create a thread with ChatGPT and return the thread ID as a string
      */
-    private fun startListening() {
+    private suspend fun CreateChatGPTThread(): String = withContext(Dispatchers.IO) {
+        Log.d(TAG, "Create new ChatGPT thread")
+        var threadIdResponse = ""
+
+        val request = Request.Builder()
+            .url("https://api.openai.com/v1/threads")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Authorization", "Bearer sk-BUMxb1U5tb7_GCSflMR67ihzYDCI7yqGbekCP0KQY1T3BlbkFJ369mt7GouL0cBfVZy1dpT2ZkOLeWtJMYBY_TvVGWAA")
+            .addHeader("OpenAI-Beta", "assistants=v2")
+            .post("{}".toRequestBody())
+            .build()
+
         try {
-            Log.d(TAG, "Starting listening")
-            isListening = true
-            isEndOfSpeech = false
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(
-                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                )
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Unexpected code $response")
+                    throw IOException("Unexpected HTTP response: ${response.code}")
+                }
 
-                // Adjust timeout periods
-                putExtra(
-                    RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    4000 // 4 seconds
-                )
-                putExtra(
-                    RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,
-                    2000 // 2 seconds
-                )
+                val responseBody = response.body?.string().orEmpty()
+                Log.d(TAG, "ChatGPT Response for creating thread: $responseBody")
+
+                val jsonObject = JSONObject(responseBody)
+                threadIdResponse = jsonObject.getString("id")
             }
-            speechRecognizer.startListening(intent)
+        } catch (e: IOException) {
+            Log.e(TAG, "Network Error: ${e.message}")
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting listening: ${e.message}")
-            Toast.makeText(this, "Failed to start listening. Try again.", Toast.LENGTH_SHORT).show()
+            Log.e(TAG, "Error: ${e.message}")
+            throw e
         }
+
+        return@withContext threadIdResponse
     }
+
+
 
     /**
      * Send the recognized text to ChatGPT and handle the response
@@ -431,43 +253,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 )
     }
 
-    /**
-     * Initialize TextToSpeech
-     */
-    override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            val result = textToSpeech.setLanguage(Locale.getDefault())
-            if (result == TextToSpeech.LANG_MISSING_DATA ||
-                result == TextToSpeech.LANG_NOT_SUPPORTED
-            ) {
-                Log.e(TAG, "Language not supported for TTS")
-            }
-        } else {
-            Log.e(TAG, "TTS Initialization failed")
-        }
-    }
-
-    /**
-     * Handle permission request results
-     */
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == RECORD_AUDIO_PERMISSION_REQUEST_CODE) {
-            if ((grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)) {
-                startListening()
-            } else {
-                Toast.makeText(
-                    this,
-                    "Permission denied. Cannot use speech recognition.",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-    }
 
     /**
      * Clean up resources
@@ -476,5 +261,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         super.onDestroy()
         speechRecognizer.destroy()
         textToSpeech.shutdown()
+    }
+
+    override fun onInit(p0: Int) {
+        TODO("Not yet implemented")
     }
 }
