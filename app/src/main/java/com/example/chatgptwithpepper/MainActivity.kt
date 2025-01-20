@@ -45,6 +45,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     // OkHttp Client for API calls
     private val client = OkHttpClient()
     private var threadId = "";
+    private var assistanceId = "";
+    private var runId = "";
     // Flags to manage speech recognition state
     private var isEndOfSpeech = false
     private var isListening = false
@@ -52,29 +54,172 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     companion object {
         private const val TAG = "MainActivity"
-        private const val RECORD_AUDIO_PERMISSION_REQUEST_CODE = 101
-        private const val TRIGGER_PHRASE = "hey zack" // Trigger phrase
+
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        hideSystemUI()
+//        hideSystemUI()
 
         lifecycleScope.launch {
             try {
-                // Call the function and wait for its result
-                val threadId = CreateChatGPTThread()
-                Log.d("yaya", "Thread id: $threadId")
 
+                // first  create assistance
+                assistanceId = CreateAssistance()
+                Log.d(TAG, "Assistance id: $assistanceId")
+                // second create thread
+                 threadId = CreateChatGPTThread()
+                Log.d(TAG, "Thread id: $threadId")
+                // third add message to thread
+                AddMessageToThread("my name is ahmed")
+                // forth run the thread with the assistance
+                runId= RunThreadWithAssistance()
+                Log.d(TAG, "Run id: $runId")
+                // last thing is to get the response from the thread through streaming
                 // Use threadId as needed after this point
+                GetGPTResponse()
             } catch (e: Exception) {
-                Log.e("yaya", "Error creating thread: ${e.message}")
+                Log.e(TAG, "Error creating thread: ${e.message}")
             }
         }
+
+    }
+private suspend fun RunThreadWithAssistance():String = withContext(Dispatchers.IO)
+{
+    var runIdResponce = "";
+    Log.d(TAG, "Run ChatGPT thread with assistance")
+    // build body it should contain assitance id
+    val requestBodyJson = JSONObject().apply {
+        put("assistant_id", assistanceId)
+    }.toString().toRequestBody("application/json".toMediaType())
+
+    val request = Request.Builder()
+        .url("https://api.openai.com/v1/threads/$threadId/runs")
+        .addHeader("Content-Type", "application/json")
+        .addHeader("Authorization", "Bearer sk-BUMxb1U5tb7_GCSflMR67ihzYDCI7yqGbekCP0KQY1T3BlbkFJ369mt7GouL0cBfVZy1dpT2ZkOLeWtJMYBY_TvVGWAA")
+        .addHeader("OpenAI-Beta", "assistants=v2")
+        .post(requestBodyJson)
+        .build()
+
+    try {
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                Log.e(TAG, "Unexpected code $response")
+                throw IOException("Unexpected HTTP response: ${response.code}")
+            }
+
+            val responseBody = response.body?.string().orEmpty()
+            Log.d(TAG, "ChatGPT Response for running thread with assistance: $responseBody")
+        }
+    } catch (e: IOException) {
+        Log.e(TAG, "Network Error: ${e.message}")
+        throw e
+    } catch (e: Exception) {
+        Log.e(TAG, "Error: ${e.message}")
+        throw e
+    }
+    return@withContext runIdResponce
+}
+
+private suspend fun  GetGPTResponse()= withContext(Dispatchers.IO)
+{
+    Log.d(TAG, "get messages from running thread")
+
+    val request = Request.Builder()
+        .url("https://api.openai.com/v1/threads/$threadId/runs/$runId")
+        .addHeader("Authorization", "Bearer sk-BUMxb1U5tb7_GCSflMR67ihzYDCI7yqGbekCP0KQY1T3BlbkFJ369mt7GouL0cBfVZy1dpT2ZkOLeWtJMYBY_TvVGWAA")
+        .addHeader("OpenAI-Beta", "assistants=v2")
+        .get()
+        .build()
+
+    try {
+        // fetch with streaming while status != completed keep fetching
+          // while true
+              while (true) {
+                  val response = client.newCall(request).execute()
+                  if (!response.isSuccessful) {
+                      Log.e(TAG, "Unexpected code $response")
+                      throw IOException("Unexpected HTTP response: ${response.code}")
+
+
+                  }
+
+                  val responseBody = response.body?.string().orEmpty()
+                  Log.d(TAG, "ChatGPT Response for running thread: $responseBody")
+                  val responseJson = JSONObject(responseBody)
+                  val messages = responseJson.getJSONArray("messages")
+                  for (i in 0 until messages.length()) {
+                      val message = messages.getJSONObject(i)
+                      val content = message.getString("content")
+                      Log.d(TAG, "Message: $content")
+                      // Add message to UI
+//            addMessageToUI(content)
+                  }
+                  if (responseJson.getString("status") == "completed") {
+                      Log.d(TAG, "ChatGPT thread completed")
+                        break
+                  }
+              }
+
+    } catch (e: IOException) {
+        Log.e(TAG, "Network Error: ${e.message}")
+        throw e
+    } catch (e: Exception) {
+        Log.e(TAG, "Error: ${e.message}")
+        throw e
     }
 
+}
 
+
+
+
+
+                    
+// first thing create assistance
+private suspend fun CreateAssistance():String = withContext(Dispatchers.IO)
+    {
+        Log.d(TAG, "Create new ChatGPT Assistance")
+        var assitanceIdResponce  = ""
+        // create body json
+        val requestBodyJson = JSONObject().apply {
+            put("instructions", "Your are running on a robot called pepper he is helpful friendly and cute people love him")
+            put("name", "Pepper")
+            put("description", "ChatGPT Assistant")
+            put("model", "gpt-4o")
+        }.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("https://api.openai.com/v1/assistants")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Authorization", "Bearer sk-BUMxb1U5tb7_GCSflMR67ihzYDCI7yqGbekCP0KQY1T3BlbkFJ369mt7GouL0cBfVZy1dpT2ZkOLeWtJMYBY_TvVGWAA")
+            .addHeader("OpenAI-Beta", "assistants=v2")
+            .post(requestBodyJson)
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Unexpected code $response")
+                    throw IOException("Unexpected HTTP response: ${response.code}")
+                }
+
+                val responseBody = response.body?.string().orEmpty()
+                Log.d(TAG, "ChatGPT Response for creating Assistance: $responseBody")
+
+                val jsonObject = JSONObject(responseBody)
+                assitanceIdResponce = jsonObject.getString("id")
+            }
+        } catch (e: IOException) {
+            Log.e(TAG, "Network Error: ${e.message}")
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Error: ${e.message}")
+            throw e
+        }
+
+        return@withContext assitanceIdResponce
+    }
     /**
      * Create a thread with ChatGPT and return the thread ID as a string
      */
@@ -113,33 +258,16 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         return@withContext threadIdResponse
     }
-
-
-
     /**
      * Send the recognized text to ChatGPT and handle the response
      */
-    private fun sendTextToChatGpt(userText: String) {
+    private fun AddMessageToThread(userText: String) {
         Log.d(TAG, "Sending text to ChatGPT: $userText")
-
-        // Build the messages array
-        val messagesArray = JSONArray().apply {
-            put(JSONObject().apply {
-                put("role", "system")
-                put("content", "You are Pepper, a helpful and friendly robot.")
-            })
-            put(JSONObject().apply {
-                put("role", "user")
-                put("content", userText)
-            })
-        }
 
         // Create JSON body for the request
         val requestBodyJson = JSONObject().apply {
-            put("model", "gpt-4")
-            put("messages", messagesArray)
-            put("max_tokens", 150)
-            put("temperature", 0.7)
+           put("role", "user")
+            put("content", userText)
         }
 
         val mediaType = "application/json; charset=utf-8".toMediaType()
@@ -147,12 +275,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         // *** Replace "YOUR_API_KEY" with your actual API key ***
         val request = Request.Builder()
-            .url("https://api.openai.com/v1/chat/completions")
+            .url("https://api.openai.com/v1/threads/$threadId/messages")
             .addHeader("Content-Type", "application/json")
-            .addHeader("Authorization", "Bearer YOUR_API_KEY") // <-- Replace here
+            .addHeader("Authorization", "Bearer sk-BUMxb1U5tb7_GCSflMR67ihzYDCI7yqGbekCP0KQY1T3BlbkFJ369mt7GouL0cBfVZy1dpT2ZkOLeWtJMYBY_TvVGWAA") // <-- Replace here
+            .addHeader("OpenAI-Beta", "assistants=v2")
             .post(body)
             .build()
-
+        Log.d("HTTP Request", "URL: ${request.url}, Body: $requestBodyJson")
         // Use lifecycleScope for coroutine
         lifecycleScope.launch(Dispatchers.IO) {
             try {
@@ -160,7 +289,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     if (!response.isSuccessful) {
                         Log.e(TAG, "Unexpected code $response")
                         withContext(Dispatchers.Main) {
-                            addMessage(false, "Pepper: I'm sorry, I couldn't process that.")
+//                            addMessage(false, "Pepper: I'm sorry, I couldn't process that.")
+                            Log.d(TAG, "Error: ${response.code}")
                         }
                         return@use
                     }
@@ -169,94 +299,29 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     Log.d(TAG, "ChatGPT Response: $responseBody")
 
                     val jsonObject = JSONObject(responseBody)
-                    val choices = jsonObject.getJSONArray("choices")
-                    if (choices.length() > 0) {
-                        val firstChoice = choices.getJSONObject(0)
-                        val messageObj = firstChoice.getJSONObject("message")
-                        val content = messageObj.getString("content").trim()
-
-                        withContext(Dispatchers.Main) {
-                            addMessage(false, "Pepper: $content")
-                            // Use TTS to speak the response
-                            textToSpeech.speak(content, TextToSpeech.QUEUE_FLUSH, null, null)
-                        }
-                    } else {
-                        withContext(Dispatchers.Main) {
-                            addMessage(false, "Pepper: I didn't receive a response.")
-                        }
+                   //message will be in content [0].text.value
+                    val message = jsonObject.getJSONObject("content").getJSONObject("text").getString("value")
+                    Log.d(TAG, "ChatGPT Response Message: $message")
+                    withContext(Dispatchers.Main) {
+                        Log.d(TAG, "ChatGPT Response Message: $message")
                     }
                 }
             } catch (e: IOException) {
                 Log.e(TAG, "Network Error: ${e.message}")
                 withContext(Dispatchers.Main) {
-                    addMessage(false, "Pepper: Something went wrong while connecting.")
-                }
+Log.e(TAG, "Network Error: ${e.message}")
+                               }
             } catch (e: Exception) {
                 Log.e(TAG, "Error: ${e.message}")
                 withContext(Dispatchers.Main) {
-                    addMessage(false, "Pepper: An unexpected error occurred.")
+                    Log.e(TAG, "Error: ${e.message}")
                 }
             }
         }
     }
 
-    /**
-     * Add a message to the chat UI
-     * @param isUser Indicates if the message is from the user
-     * @param message The message text
-     */
-    private fun addMessage(isUser: Boolean, message: String) {
-        val textView = TextView(this).apply {
-            text = message
-            textSize = 16f
-            setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.black))
-            setPadding(16, 16, 16, 16)
-            setBackgroundResource(
-                if (isUser)
-                    R.drawable.right_bubble_background
-                else
-                    R.drawable.left_bubble_background
-            )
-            val params = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = 8
-                if (isUser) {
-                    gravity = Gravity.END
-                    marginEnd = 16
-                    marginStart = 50
-                } else {
-                    gravity = Gravity.START
-                    marginStart = 16
-                    marginEnd = 50
-                }
-            }
-            layoutParams = params
-        }
-
-        messageContainer.addView(textView)
-        scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
-    }
-
-    /**
-     * Hide system UI for full-screen experience
-     */
-    private fun hideSystemUI() {
-        window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_IMMERSIVE
-                        or View.SYSTEM_UI_FLAG_FULLSCREEN
-                        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                )
-    }
 
 
-    /**
-     * Clean up resources
-     */
     override fun onDestroy() {
         super.onDestroy()
         speechRecognizer.destroy()
