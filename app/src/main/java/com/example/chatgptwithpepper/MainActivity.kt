@@ -111,6 +111,8 @@ private suspend fun RunThreadWithAssistance():String = withContext(Dispatchers.I
 
             val responseBody = response.body?.string().orEmpty()
             Log.d(TAG, "ChatGPT Response for running thread with assistance: $responseBody")
+            runIdResponce = JSONObject(responseBody).getString("id")
+            Log.d(TAG, "Run id: $runIdResponce")
         }
     } catch (e: IOException) {
         Log.e(TAG, "Network Error: ${e.message}")
