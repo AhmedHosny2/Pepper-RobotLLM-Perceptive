@@ -296,15 +296,8 @@ private suspend fun CreateAssistance():String = withContext(Dispatchers.IO)
                     }
 
                     val responseBody = response.body?.string().orEmpty()
-                    Log.d(TAG, "ChatGPT Response: $responseBody")
+                    Log.d(TAG, "ChatGPT Response from adding message into thread: $responseBody")
 
-                    val jsonObject = JSONObject(responseBody)
-                   //message will be in content [0].text.value
-                    val message = jsonObject.getJSONObject("content").getJSONObject("text").getString("value")
-                    Log.d(TAG, "ChatGPT Response Message: $message")
-                    withContext(Dispatchers.Main) {
-                        Log.d(TAG, "ChatGPT Response Message: $message")
-                    }
                 }
             } catch (e: IOException) {
                 Log.e(TAG, "Network Error: ${e.message}")
