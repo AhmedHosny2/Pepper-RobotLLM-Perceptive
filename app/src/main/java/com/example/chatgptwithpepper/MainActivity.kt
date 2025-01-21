@@ -2,6 +2,9 @@ package com.example.chatgptwithpepper
 
 import android.os.Bundle
 import android.util.Log
+import android.widget.Button
+import android.widget.EditText
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.*
@@ -15,18 +18,17 @@ import java.util.concurrent.TimeoutException
 
 class MainActivity : AppCompatActivity() {
 
-
-
     // OkHttp Client for API calls
     private val client = OkHttpClient()
     private var threadId = ""
     private var assistanceId = ""
     private var runId = ""
 
-    // Flags to manage speech recognition state
-    private var isEndOfSpeech = false
-    private var isListening = false
-    private var isTriggerDetected = false
+    // UI Components
+    private lateinit var startSessionButton: Button
+    private lateinit var submitButton: Button
+    private lateinit var editText: EditText
+    private lateinit var gptResponseTextView: TextView // Added TextView to display GPT response
 
     companion object {
         private const val TAG = "MainActivity"
@@ -42,51 +44,89 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        // Initialize UI components here if needed
 
-        // Initialize Speech Recognizer and TextToSpeech
+        // Initialize UI components
+        startSessionButton = findViewById(R.id.startButton)
+        submitButton = findViewById(R.id.submitButton)
+        editText = findViewById(R.id.inputText)
+        gptResponseTextView = findViewById(R.id.statusTextView) // Initialize TextView
 
+        // Set button listeners
+        startSessionButton.setOnClickListener {
+            lifecycleScope.launch {
+                startSession()
+            }
+        }
+
+        submitButton.setOnClickListener {
+            val userInput = editText.text.toString()
+            if (userInput.isNotBlank()) {
+                lifecycleScope.launch {
+                    submitMessage(userInput)
+                }
+            }
+        }
+
+
+        // Initialize Assistance on App Launch
         lifecycleScope.launch {
             try {
                 // Step 1: Create assistance
                 assistanceId = createAssistance()
-                Log.d(TAG, "Assistance id: $assistanceId")
-
-                // Step 2: Create thread
-                threadId = createChatGPTThread()
-                Log.d(TAG, "Thread id: $threadId")
-
-                // Step 3: Add message to thread
-                addMessageToThread("my name is ahmed")
-
-                // Step 4: Run thread with assistance
-                runId = runThreadWithAssistance()
-                Log.d(TAG, "Run id: $runId")
-
-                // Step 5: Get GPT response
-                val gptResponse = getGPTResponse()
-                Log.d(TAG, "Received GPT Response: $gptResponse")
-
-                // Update UI with the GPT response
-                withContext(Dispatchers.Main) {
-                    // Example: display in a TextView
-                    // findViewById<TextView>(R.id.gptResponseTextView).text = gptResponse
-                }
-
+                Log.d(TAG, "Assistance ID: $assistanceId")
             } catch (e: Exception) {
-                Log.e(TAG, "Error in coroutine: ${e.message}")
+                Log.e(TAG, "Error creating assistance: ${e.message}")
                 // Optional: Show error message to the user
             }
         }
     }
 
+    /**
+     * Starts a new session by creating a new thread.
+     */
+    private suspend fun startSession() {
+        try {
+            // Step 2: Create thread
+            threadId = createChatGPTThread()
+            Log.d(TAG, "Thread ID: $threadId")
+            // Optional: Notify user that the session has started
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting session: ${e.message}")
+            // Optional: Show error message to the user
+        }
+    }
+
+    /**
+     * Submits the user's message, runs the thread, and fetches the GPT response.
+     *
+     * @param userText The text input from the user.
+     */
+    private suspend fun submitMessage(userText: String) {
+        try {
+            // Step 3: Add message to thread
+            addMessageToThread(userText)
+
+            // Step 4: Run thread with assistance
+            runId = runThreadWithAssistance()
+            Log.d(TAG, "Run ID: $runId")
+
+            // Step 5: Get GPT response
+            val gptResponse = getGPTResponse()
+            Log.d(TAG, "Received GPT Response: $gptResponse")
+
+            // Update UI with the GPT response
+            withContext(Dispatchers.Main) {
+                gptResponseTextView.text = gptResponse // Display response
+                editText.text.clear() // Clear input field
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error submitting message: ${e.message}")
+            // Optional: Show error message to the user
+        }
+    }
 
     /**
      * Creates a new ChatGPT Assistance and returns the assistance ID.
-     *
-     * @return The assistance ID as a string.
-     * @throws IOException If there is a network error or an unexpected HTTP response.
-     * @throws Exception For any other errors encountered during processing.
      */
     private suspend fun createAssistance(): String = withContext(Dispatchers.IO) {
         Log.d(TAG, "Creating new ChatGPT Assistance")
@@ -94,7 +134,7 @@ class MainActivity : AppCompatActivity() {
 
         // Create JSON body
         val requestBodyJson = JSONObject().apply {
-            put("instructions", "Your are running on a robot called pepper he is helpful friendly and cute people love him")
+            put("instructions", "You are running on a robot called Pepper. He is helpful, friendly, and cute. People love him.")
             put("name", "Pepper")
             put("description", "ChatGPT Assistant")
             put("model", "gpt-4o")
@@ -138,10 +178,6 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Creates a new ChatGPT thread and returns the thread ID.
-     *
-     * @return The thread ID as a string.
-     * @throws IOException If there is a network error or an unexpected HTTP response.
-     * @throws Exception For any other errors encountered during processing.
      */
     private suspend fun createChatGPTThread(): String = withContext(Dispatchers.IO) {
         Log.d(TAG, "Creating new ChatGPT thread")
@@ -231,10 +267,6 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Runs the thread with the specified assistance and returns the run ID.
-     *
-     * @return The run ID as a string.
-     * @throws IOException If there is a network error or an unexpected HTTP response.
-     * @throws Exception For any other errors encountered during processing.
      */
     private suspend fun runThreadWithAssistance(): String = withContext(Dispatchers.IO) {
         var runIdResponse = ""
@@ -281,11 +313,6 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Fetches the GPT response message from the API.
-     *
-     * @return The message from the GPT API when the status is "completed".
-     * @throws IOException If there is a network error or an unexpected HTTP response.
-     * @throws Exception For any other errors encountered during processing.
-     * @throws TimeoutException If the thread does not complete within the expected time.
      */
     private suspend fun getGPTResponse(): String = withContext(Dispatchers.IO) {
         Log.d(TAG, "Fetching messages from the running thread")
@@ -299,6 +326,7 @@ class MainActivity : AppCompatActivity() {
 
         val maxRetries = 60 // e.g., 60 attempts (~1 minute)
         var attempt = 0
+        var gptMessage = ""
 
         try {
             while (attempt < maxRetries) {
@@ -320,8 +348,9 @@ class MainActivity : AppCompatActivity() {
                         // Fetch messages
                         val messages = fetchMessages()
                         if (messages.isNotEmpty()) {
-                                           Log.d(TAG, "Messages: $messages")
-
+                            gptMessage = messages.first()// Get the latest message
+                            Log.d(TAG, "Latest GPT message: $gptMessage")
+                           return@withContext gptMessage
                         } else {
                             Log.e(TAG, "No messages found in the thread.")
                             throw Exception("No messages found in the thread.")
@@ -334,7 +363,10 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            throw TimeoutException("ChatGPT thread did not complete within expected time.")
+            if (gptMessage.isEmpty()) {
+                throw TimeoutException("ChatGPT thread did not complete within expected time.")
+            }
+
         } catch (e: IOException) {
             Log.e(TAG, "Network Error: ${e.message}")
             throw e
@@ -345,15 +377,14 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "Error: ${e.message}")
             throw e
         }
+
+        return@withContext gptMessage
     }
 
     /**
      * Fetches all messages from the specified thread.
-     *
-     * @return A list of Message objects.
-     * @throws IOException If there is a network error or an unexpected HTTP response.
      */
-    private suspend fun fetchMessages(): String = withContext(Dispatchers.IO) {
+    private suspend fun fetchMessages(): List<String> = withContext(Dispatchers.IO) {
         Log.d(TAG, "Fetching messages from the thread")
 
         val messagesRequest = Request.Builder()
@@ -362,46 +393,53 @@ class MainActivity : AppCompatActivity() {
             .addHeader("OpenAI-Beta", "assistants=v2")
             .get()
             .build()
-var message =""
-        client.newCall(messagesRequest).execute().use { response ->
-            if (!response.isSuccessful) {
-                val errorBody = response.body?.string()
-                Log.e(TAG, "Failed to fetch messages: ${response.code}, Body: $errorBody")
-                throw IOException("Failed to fetch messages: ${response.code}")
-            }
 
-            val responseBody = response.body?.string().orEmpty()
-            Log.d(TAG, "Messages Response: $responseBody")
-            val jsonResponse = JSONObject(responseBody)
+        val messagesList = mutableListOf<String>()
 
-            val dataArray = jsonResponse.optJSONArray("data") ?: JSONArray()
-
-            val messagesList = mutableListOf<String>()
-            for (i in 0 until dataArray.length()) {
-                val messageObj = dataArray.getJSONObject(i)
-
-                val contentArray = messageObj.optJSONArray("content") ?: JSONArray()
-                var messageContent = ""
-
-                for (j in 0 until contentArray.length()) {
-                    val contentObj = contentArray.getJSONObject(j)
-                    if (contentObj.optString("type") == "text") {
-                        val textObj = contentObj.optJSONObject("text")
-                        val value = textObj?.optString("value") ?: ""
-                        messageContent += value
-                    }
+        try {
+            client.newCall(messagesRequest).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string()
+                    Log.e(TAG, "Failed to fetch messages: ${response.code}, Body: $errorBody")
+                    throw IOException("Failed to fetch messages: ${response.code}")
                 }
-                Log.d("GPT message", "the right message: $messageContent")
 
-                messagesList.add( messageContent)
+                val responseBody = response.body?.string().orEmpty()
+                Log.d(TAG, "Messages Response: $responseBody")
+                val jsonResponse = JSONObject(responseBody)
+
+                val dataArray = jsonResponse.optJSONArray("data") ?: JSONArray()
+
+                for (i in 0 until dataArray.length()) {
+                    val messageObj = dataArray.getJSONObject(i)
+
+                    val contentArray = messageObj.optJSONArray("content") ?: JSONArray()
+                    var messageContent = ""
+
+                    for (j in 0 until 1) {
+                        val contentObj = contentArray.getJSONObject(j)
+                        if (contentObj.optString("type") == "text") {
+                            val textObj = contentObj.optJSONObject("text")
+                            val value = textObj?.optString("value") ?: ""
+                            messageContent += value
+                        }
+                    }
+
+                    Log.d("GPT message", "The right message: $messageContent")
+
+                    messagesList.add(messageContent)
+                }
+
+                Log.d(TAG, "Total messages fetched: ${messagesList.size}")
             }
-
-            Log.d(TAG, "Total messages fetched: ${messagesList.size}")
-            }
-
-            return@withContext message
+        } catch (e: IOException) {
+            Log.e(TAG, "Network Error: ${e.message}")
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Error: ${e.message}")
+            throw e
         }
+
+        return@withContext messagesList
     }
-
-
-
+}

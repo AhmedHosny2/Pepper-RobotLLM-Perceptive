@@ -8,6 +8,18 @@
     android:padding="16dp"
     tools:context=".MainActivity">
 
+    <!-- General Status or Information TextView -->
+    <TextView
+        android:id="@+id/statusTextView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Welcome to ChatGPT Assistant"
+        android:textSize="16sp"
+        android:padding="8dp"
+        android:textColor="@android:color/black"
+        android:background="@android:color/darker_gray"
+        android:layout_marginBottom="8dp" />
+
     <!-- ScrollView to display messages -->
     <ScrollView
         android:id="@+id/scrollView"
@@ -16,6 +28,7 @@
         android:layout_weight="1"
         android:fillViewport="true">
 
+        <!-- Single child inside ScrollView -->
         <LinearLayout
             android:id="@+id/messageContainer"
             android:layout_width="match_parent"
@@ -23,14 +36,47 @@
             android:orientation="vertical">
             <!-- Messages will be dynamically added here -->
         </LinearLayout>
+
     </ScrollView>
 
-    <!-- Start Button -->
+    <!-- Text Input Field -->
+    <EditText
+        android:id="@+id/inputText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter your text here"
+        android:padding="12dp"
+        android:textSize="16sp"
+        android:layout_marginBottom="8dp" />
+
+    <!-- Submit Button -->
+    <Button
+        android:id="@+id/submitButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Submit"
+        android:background="@color/purple_500"
+        android:textColor="@android:color/white"
+        android:padding="16dp"
+        android:layout_marginBottom="8dp" />
+
+    <!-- Start Session Button -->
     <Button
         android:id="@+id/startButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Start Listening"
+        android:text="Start Session"
+        android:background="@color/purple_500"
+        android:textColor="@android:color/white"
+        android:padding="16dp"
+        android:layout_marginTop="8dp" />
+
+    <!-- End Session Button -->
+    <Button
+        android:id="@+id/endButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="End Session"
         android:background="@color/purple_500"
         android:textColor="@android:color/white"
         android:padding="16dp"
