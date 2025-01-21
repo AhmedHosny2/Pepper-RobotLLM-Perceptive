@@ -49,7 +49,7 @@ class MainActivity : AppCompatActivity(),
     private lateinit var messageContainer: LinearLayout
     private lateinit var scrollView: ScrollView
     private lateinit var resultText: String
-
+    private lateinit var newChatButton: Button
 
     // Speech
     private lateinit var speechRecognizer: SpeechRecognizer
@@ -103,6 +103,7 @@ class MainActivity : AppCompatActivity(),
         startButton = findViewById(R.id.startButton)
         messageContainer = findViewById(R.id.messageContainer)
         scrollView = findViewById(R.id.scrollView)
+        newChatButton = findViewById(R.id.newChatButton)
 
         // SpeechRecognizer
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
@@ -147,6 +148,14 @@ class MainActivity : AppCompatActivity(),
         startButton.setOnClickListener {
             checkAudioPermissionAndStart()
         }
+        newChatButton.setOnClickListener(
+            View.OnClickListener {
+                messageContainer.removeAllViews()
+                lifecycleScope.launch {
+                    startSession()
+                }
+            }
+        )
     }
     /**
      * Starts a new session by creating a new thread.
@@ -589,33 +598,51 @@ class MainActivity : AppCompatActivity(),
      * @param message: the text to display
      */
     private fun addMessage(isUser: Boolean, message: String) {
-        val textView = TextView(this)
-        val layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        )
-
-        if (isUser) {
-            layoutParams.gravity = Gravity.END
-            layoutParams.marginStart = 200
-            layoutParams.marginEnd = 20
-            textView.setBackgroundResource(R.drawable.right_bubble_background)
-        } else {
-            layoutParams.gravity = Gravity.START
-            layoutParams.marginStart = 20
-            layoutParams.marginEnd = 200
-            textView.setBackgroundResource(R.drawable.left_bubble_background)
+        // Create a container for the message and timestamp
+        val messageLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = if (isUser) Gravity.END else Gravity.START
+                topMargin = 12
+                marginStart = if (isUser) 150 else 20
+                marginEnd = if (isUser) 20 else 150
+            }
         }
-        layoutParams.topMargin = 16
-        textView.layoutParams = layoutParams
-        textView.textSize = 18f
-        textView.text = message
-        textView.setTextColor(getColor(android.R.color.black))
 
-        messageContainer.addView(textView)
-        scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
+        // Message TextView
+        val messageTextView = TextView(this).apply {
+            text = message
+            textSize = 16f
+            setPadding(20, 12, 20, 12)
+            setTextColor(
+                if (isUser) getColor(android.R.color.white) else getColor(android.R.color.black)
+            )
+            setBackgroundResource(
+                if (isUser) R.drawable.right_bubble_background else R.drawable.left_bubble_background
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = 4
+            }
+        }
+
+
+
+
+        // Add views to the container
+        messageLayout.addView(messageTextView)
+
+        // Add the container to the message container
+        messageContainer.addView(messageLayout)
+
+        // Smooth scroll to the bottom
+        scrollView.post { scrollView.smoothScrollTo(0, scrollView.bottom) }
     }
-
     /**
      * Hide system UI for Pepper screen.
      */
@@ -670,19 +697,40 @@ class MainActivity : AppCompatActivity(),
     // RobotLifecycleCallbacks
     override fun onRobotFocusGained(qiContext: QiContext?) {
         this.qiContext = qiContext
-        lifecycleScope.launch {
-            startSession()
-        }
         Log.i(TAG, "Robot focus gained.")
-        // Greet user
+
+        lifecycleScope.launch {
+            try {
+                // Ensure a session is started or resumed
+                startSession()
+                Log.i(TAG, "Session started successfully.")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting session on focus gained: ${e.message}")
+            }
+        }
+
+        // Greet the user
         sayText("Hello! I am Pepper, ready to assist.")
     }
 
     override fun onRobotFocusLost() {
         Log.i(TAG, "Robot focus lost.")
-        qiContext = null
-        addMessage(false, "Pepper: I've lost focus. Please wait...")
+
+        // Clean up QiContext
+        this.qiContext = null
+
+        // Notify the user about focus loss
+        lifecycleScope.launch {
+            try {
+                addMessage(false, "Pepper: I've lost focus. Please wait...")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error notifying focus loss: ${e.message}")
+            }
+        }
+
+        // Do not start a new session here; wait for focus to be regained
     }
+
 
     override fun onRobotFocusRefused(reason: String?) {
         qiContext = null
