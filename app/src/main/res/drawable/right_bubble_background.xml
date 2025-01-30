@@ -1,4 +1,8 @@
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <corners android:radius="8dp" />
-    <solid android:color="#E8E8E8" /> <!-- Right bubble color -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+<corners android:radius="16dp" />
+<gradient
+    android:startColor="#2196F3"
+android:endColor="#1976D2"
+android:angle="270" />
+<padding android:left="16dp" android:top="12dp" android:right="16dp" android:bottom="12dp" />
 </shape>
