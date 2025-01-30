@@ -60,7 +60,6 @@ class MainActivity : AppCompatActivity(),
     private lateinit var resultText: String
     private lateinit var newChatButton: Button
     private lateinit var takePicButton: Button
-    private lateinit var pictureView: ImageView
 
     // Speech
     private lateinit var speechRecognizer: SpeechRecognizer
@@ -117,7 +116,6 @@ class MainActivity : AppCompatActivity(),
         scrollView = findViewById(R.id.scrollView)
         newChatButton = findViewById(R.id.newChatButton)
         takePicButton = findViewById(R.id.take_pic_button)
-        pictureView = findViewById(R.id.picture_view)
 
         // SpeechRecognizer
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
@@ -146,7 +144,9 @@ class MainActivity : AppCompatActivity(),
                     Log.d(TAG, "onResults: $transcript")
                     val result = matches[0]
                     resultText = result
-                    addMessage(true, "You: $result")
+                    runOnUiThread {
+                        addMessage(true, "You: $result")
+                    }
                     Log.d(TAG, "User: $result")
 
                     lifecycleScope.launch {
@@ -186,11 +186,7 @@ class MainActivity : AppCompatActivity(),
         }
 
         // Clear old bitmap
-        pictureBitmap?.let {
-            it.recycle()
-            pictureBitmap = null
-            pictureView.setImageBitmap(null)
-        }
+
 
         Log.i(TAG, "build take picture")
 
@@ -244,6 +240,7 @@ class MainActivity : AppCompatActivity(),
                     Log.d("SendImageToApi", "Starting to send image to API.")
 
                     lifecycleScope.launch {
+                        sendImageToChatGPT(base64)
                         // send image to normal gpt for images
                         // get resposne
                         // let pepper say the reposne
@@ -255,7 +252,112 @@ class MainActivity : AppCompatActivity(),
 
     }
 
-    
+    suspend fun  sendImageToChatGPT(image64Base: String) {
+        Log.d("SendImageToApi", "Starting to send image to API.")
+
+        // Prepare JSON payload
+        val jsonObject = JSONObject().apply {
+            try {
+                val contentArray = JSONArray().apply {
+                    put(
+                        JSONObject().apply {
+                            put("type", "text")
+                            put("text", "What is in this image? give me answer that will be said by a robot so make it human feeling with complments with simple english like I can see a man with an awesome tshirt and great glasses doing something (like working)  in his place (like office) and some more details  make it cute and simple english so that it can be said by a robot.")                        }
+                    )
+                    put(
+                        JSONObject().apply {
+                            put("type", "image_url")
+                            put(
+                                "image_url",
+                                JSONObject().apply {
+                                    put("url", "data:image/jpeg;base64,$image64Base")
+                                }
+                            )
+                        }
+                    )
+                }
+
+                val messageObject = JSONObject().apply {
+                    put("role", "user")
+                    put("content", contentArray)
+                }
+
+                val messagesArray = JSONArray().apply {
+                    put(messageObject)
+                }
+
+                put("messages", messagesArray)
+                put("model", "gpt-4o-mini")
+            } catch (e: Exception) {
+                Log.e("SendImageToApi", "Error while preparing JSON payload: ${e.message}")
+            }
+        }
+
+        Log.d("SendImageToApi", "JSON payload prepared: $jsonObject")
+
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val body = RequestBody.create(mediaType, jsonObject.toString())
+        Log.d("SendImageToApi", "Request body created.")
+        // get api key from build config
+        val API_KEY = "sk-BUMxb1U5tb7_GCSflMR67ihzYDCI7yqGbekCP0KQY1T3BlbkFJ369mt7GouL0cBfVZy1dpT2ZkOLeWtJMYBY_TvVGWAA"
+        val request = Request.Builder()
+            .url(API_URL)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Authorization", "Bearer $API_KEY")
+            .post(body)
+            .build()
+
+        Log.d("SendImageToApi", "HTTP request built.")
+
+        // Execute the request asynchronously
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e("SendImageToApi", "HTTP request failed: ${e.message}")
+
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                if (response.isSuccessful) {
+                    val responseBody = response.body?.string()
+                    try {
+                        val jsonResponse = JSONObject(responseBody)
+                        val choicesArray = jsonResponse.getJSONArray("choices")
+                        val firstChoice = choicesArray.getJSONObject(0)
+                        val message = firstChoice.getJSONObject("message")
+                        val content = message.getString("content")
+
+                        Log.d("SendImageToApi", "Content: $content")
+                        runOnUiThread {
+                    Log.e("SendImageToApi", "Content: $content")
+                            sayText(content) // Speak the content
+                            runOnUiThread {
+                                addMessage(false, "Pepper: $content") // Add the content to the chat
+
+                            }
+                            lifecycleScope.launch {
+                                val updatedContent = "$content. I will use this message in my future conversations. If someone asks me about their t-shirt color, their location, or anything from their environment, I will use it to enhance my responses."
+                                addMessageToThread(updatedContent, false)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("SendImageToApi", "Error parsing JSON response: ${e.message}")
+                    }
+                } else {
+                    val errorBody = response.body?.string()
+                    Log.e("SendImageToApi", "HTTP response failed. Code: ${response.code}, Message: ${response.message}, Body: $errorBody")
+
+                }
+            }  })
+        Log.d("SendImageToApi", "Request sent.")
+    }
+
+
+
+
+
+
+
+
 
 
 
@@ -284,10 +386,9 @@ class MainActivity : AppCompatActivity(),
     private suspend fun submitMessage(userText: String, isImage : Boolean = false) {
         try {
             if(isImage)
-                addImageMessageToThread(userText)
+                addMessageToThread(userText, false)
             else             // Step 3: Add message to thread
-
-            addMessageToThread(userText)
+            addMessageToThread(userText, true)
 
             // Step 4: Run thread with assistance
             runId = runThreadWithAssistance()
@@ -308,51 +409,7 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    /**
-     * Adds an image message to the thread.
-     *
-     * @param imageBase64 The image encoded in Base64.
-     */
-    private suspend fun addImageMessageToThread(imageBase64: String) = withContext(Dispatchers.IO)  {
-        Log.d(TAG, "Sending image to ChatGPT: $imageBase64")
 
-        // Create JSON body for the image message
-        val requestBodyJson = JSONObject().apply {
-            put("role", "user")
-            put("type", "image")
-            put("content", imageBase64)
-        }.toString()
-
-        val mediaType = "application/json; charset=utf-8".toMediaType()
-        val body = requestBodyJson.toRequestBody(mediaType)
-
-        val request = Request.Builder()
-            .url("https://api.openai.com/v1/threads/$threadId/messages")
-            .addHeader("Content-Type", "application/json")
-            .addHeader("Authorization", "Bearer $apiKey")
-            .addHeader("OpenAI-Beta", "assistants=v2")
-            .post(body)
-            .build()
-
-        try {
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    val errorBody = response.body?.string()
-                    Log.e(TAG, "Unexpected response code: ${response.code}, Body: $errorBody")
-                    throw IOException("Unexpected HTTP response: ${response.code}")
-                }
-
-                Log.d(TAG, "Image message added to thread successfully.")
-                // Optionally parse and handle the response if needed
-            }
-        } catch (e: IOException) {
-            Log.e(TAG, "Network Error: ${e.message}")
-            throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "Error: ${e.message}")
-            throw e
-        }
-    }
 
     /**
      * Creates a new ChatGPT Assistance and returns the assistance ID.
@@ -363,7 +420,17 @@ class MainActivity : AppCompatActivity(),
 
         // Create JSON body
         val requestBodyJson = JSONObject().apply {
-            put("instructions", "You are running on a robot called Pepper. He is helpful, friendly, and cute. People love him. you are stateful and you can remember the context of the conversation try to show this while talking like if you got someone name use it if you ot his jobs use it you can add some jokes as well you don't need any long message just simple answers like 3 lines max  if i gave you an image describe  it in a nice cute way ")
+                    put("instructions", """
+            You are operating on a robot named Pepper. Pepper is helpful, friendly, and cute, and people love him. 
+            You are stateful, meaning you can remember the context of conversations. Demonstrate this by using someone's 
+            name or their job when appropriate. You can incorporate jokes and dark comedy about overcoming challenges 
+            and (mockingly) conquering the world, followed by a playful remark like "just kidding" or "or not?" ,
+            " dont' use the dark comedy every message just once or twice in the conversation" ,
+            "try to make each message has a flavour or something",
+            Keep your responses concise, no longer than three lines. If I provide an image, describe it in a nice, 
+            cute way. Additionally, since people often think Pepper might take over the world, feel free to play 
+            with this idea in a funny and darkly comedic manner. but don't assume names just use if given
+        """.trimIndent())
             put("name", "Pepper")
             put("description", "ChatGPT Assistant")
             put("model", "gpt-4o")
@@ -451,14 +518,34 @@ class MainActivity : AppCompatActivity(),
      *
      * @param userText The text input from the user.
      */
-    private suspend fun addMessageToThread(userText: String) = withContext(Dispatchers.IO) {
-        Log.d(TAG, "Sending text to ChatGPT: $userText")
+    private suspend fun addMessageToThread(messageText: String, isUser: Boolean = true) = withContext(Dispatchers.IO) {
+        if(isUser)
+            Log.d(TAG, "Sending text to ChatGPT: $messageText")
+            else
+        {
 
+            Log.d(TAG, "store gpt response : $messageText")
+
+        }
+
+
+            var requestBodyJson = JSONObject().toString();
         // Create JSON body for the request
-        val requestBodyJson = JSONObject().apply {
-            put("role", "user")
-            put("content", userText)
-        }.toString()
+        if(isUser) {
+
+
+             requestBodyJson = JSONObject().apply {
+                put("role", "user")
+                put("content", messageText)
+            }.toString()
+        }else
+        {
+             requestBodyJson = JSONObject().apply {
+                put("role", "assistant")
+                put("content", messageText)
+            }.toString()
+
+        }
 
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val body = requestBodyJson.toRequestBody(mediaType)
@@ -577,6 +664,13 @@ class MainActivity : AppCompatActivity(),
                         // Fetch messages
                         val messages = fetchMessages()
                         if (messages.isNotEmpty()) {
+                            //i wanna attache all images and display them
+                            // for each on messages and add them
+//                                for( string mesg in messages)
+//                            {
+//                                    addMessage(true, mesg )
+//                            }
+
                             gptMessage = messages.first()// Get the latest message
                             Log.d(TAG, "Latest GPT message: $gptMessage")
                             return@withContext gptMessage
@@ -863,6 +957,9 @@ class MainActivity : AppCompatActivity(),
 
         // Scroll to the bottom so new messages are visible
         scrollView.post { scrollView.smoothScrollTo(0, scrollView.bottom) }
+        scrollView.post {
+            scrollView.fullScroll(View.FOCUS_DOWN)
+        }
     }
 
     private fun getCurrentTimestamp(): String {
@@ -952,7 +1049,9 @@ class MainActivity : AppCompatActivity(),
         // Notify the user about focus loss
         lifecycleScope.launch {
             try {
+                runOnUiThread {
                 addMessage(false, "Pepper: I've lost focus. Please wait...")
+                    }
             } catch (e: Exception) {
                 Log.e(TAG, "Error notifying focus loss: ${e.message}")
             }
@@ -964,6 +1063,8 @@ class MainActivity : AppCompatActivity(),
 
     override fun onRobotFocusRefused(reason: String?) {
         qiContext = null
-        addMessage(false, "Pepper: I couldn't get focus, sorry.")
+        runOnUiThread {
+            addMessage(false, "Pepper: I couldn't get focus, sorry.")
+        }
     }
 }
