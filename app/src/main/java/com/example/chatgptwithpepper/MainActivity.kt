@@ -175,123 +175,6 @@ class MainActivity : AppCompatActivity(),
         takePicButton.setOnClickListener { takePic() }
 
     }
-    /**
-     * Send an image in Base64 form to ChatGPT for analysis.
-     */
-    fun sendImageToChatGPT(image64Base: String) {
-        Log.d("SendImageToApi", "Starting to send image to API.")
-//
-//        // Prepare JSON payload
-//        val jsonObject = JSONObject().apply {
-//            try {
-//                val contentArray = JSONArray().apply {
-//                    put(
-//                        JSONObject().apply {
-//                            put("type", "text")
-//                            put("type", "text")
-//                            put("text", "What is in this image? give me answer that will be siad by a robot so make it human feeling with complments with simple english like I can see a man with an awesome tshirt and great glasses drinking cofffee in his office and some omre details ")
-//                        }
-//                    )
-//                    put(
-//                        JSONObject().apply {
-//                            put("type", "image_url")
-//                            put(
-//                                "image_url",
-//                                JSONObject().apply {
-//                                    put("url", "data:image/jpeg;base64,$image64Base")
-//                                }
-//                            )
-//                        }
-//                    )
-//                }
-//
-//                val messageObject = JSONObject().apply {
-//                    put("role", "user")
-//                    put("content", contentArray)
-//                }
-//
-//                val messagesArray = JSONArray().apply {
-//                    put(messageObject)
-//                }
-//
-//                put("messages", messagesArray)
-//                put("model", "gpt-4o-mini")
-//            } catch (e: Exception) {
-//                Log.e("SendImageToApi", "Error while preparing JSON payload: ${e.message}")
-//            }
-//        }
-//
-//        Log.d("SendImageToApi", "JSON payload prepared: $jsonObject")
-//
-//        val mediaType = "application/json; charset=utf-8".toMediaType()
-//        val body = RequestBody.create(mediaType, jsonObject.toString())
-//        Log.d("SendImageToApi", "Request body created.")
-//        // get api key from build config
-//        val API_KEY = "sk-BUMxb1U5tb7_GCSflMR67ihzYDCI7yqGbekCP0KQY1T3BlbkFJ369mt7GouL0cBfVZy1dpT2ZkOLeWtJMYBY_TvVGWAA"
-//        val request = Request.Builder()
-//            .url(API_URL)
-//            .addHeader("Content-Type", "application/json")
-//            .addHeader("Authorization", "Bearer $API_KEY")
-//            .post(body)
-//            .build()
-//
-//        Log.d("SendImageToApi", "HTTP request built.")
-//
-//        // Execute the request asynchronously
-//        client.newCall(request).enqueue(object : Callback {
-//            override fun onFailure(call: Call, e: IOException) {
-//                Log.e("SendImageToApi", "HTTP request failed: ${e.message}")
-//                runOnUiThread {
-//                    Toast.makeText(
-//                        this@MainActivity,
-//                        "Failed to upload image: ${e.message}",
-//                        Toast.LENGTH_SHORT
-//                    ).show()
-//                }
-//            }
-//
-//            override fun onResponse(call: Call, response: Response) {
-//                if (response.isSuccessful) {
-//                    val responseBody = response.body?.string()
-//                    try {
-//                        val jsonResponse = JSONObject(responseBody)
-//                        val choicesArray = jsonResponse.getJSONArray("choices")
-//                        val firstChoice = choicesArray.getJSONObject(0)
-//                        val message = firstChoice.getJSONObject("message")
-//                        val content = message.getString("content")
-//
-//                        Log.d("SendImageToApi", "Content: $content")
-//                        runOnUiThread {
-//                            Toast.makeText(
-//                                this@MainActivity,
-//                                "Content: $content",
-//                                Toast.LENGTH_LONG
-//                            ).show()
-//                            println("Content: $content") // Print content to the console
-//                            sayText(content) // Speak the content
-//                            addMessage(true, "Pepper: $content") // Add the content to the chat
-//                        }
-//                    } catch (e: Exception) {
-//                        Log.e("SendImageToApi", "Error parsing JSON response: ${e.message}")
-//                    }
-//                } else {
-//                    val errorBody = response.body?.string()
-//                    Log.e("SendImageToApi", "HTTP response failed. Code: ${response.code}, Message: ${response.message}, Body: $errorBody")
-//                    runOnUiThread {
-//                        Toast.makeText(
-//                            this@MainActivity,
-//                            "Upload failed: ${response.message}",
-//                            Toast.LENGTH_SHORT
-//                        ).show()
-//                    }
-//                }
-//            }  })
-        // Instead of handling separately, submit the image as part of the thread
-        lifecycleScope.launch {
-            submitMessage(image64Base, isImage = true)
-        }
-        Log.d("SendImageToApi", "Request sent.")
-    }
 
 
     /**
@@ -349,17 +232,30 @@ class MainActivity : AppCompatActivity(),
 
                 // Display the image on Pepper’s tablet
                 runOnUiThread {
-                    pictureView.setImageBitmap(bitmap)
+                   addImageBubble(true, bitmap)
+
                 }
 
                 // Convert to Base64
                 val base64 = Base64.encodeToString(pictureArray, Base64.DEFAULT)
                 Log.i(TAG, "PICTURE RECEIVED! ($base64)")
 
-                // Send to ChatGPT
-                sendImageToChatGPT(base64)
-            }
+
+                    Log.d("SendImageToApi", "Starting to send image to API.")
+
+                    lifecycleScope.launch {
+                        // send image to normal gpt for images
+                        // get resposne
+                        // let pepper say the reposne
+                        // attach system reposne into the thread
+                    }
+                    Log.d("SendImageToApi", "Request sent.")
+                }
+
+
     }
+
+    
 
 
 
@@ -850,12 +746,12 @@ class MainActivity : AppCompatActivity(),
     }
 
     /**
-     * Add a message bubble to the UI.
-     * @param isUser: whether it's user or Pepper
-     * @param message: the text to display
+     * Adds an image bubble to the UI (similar to addMessage, but for images).
+     *
+     * @param isUser True if this is the user’s image; false if it’s from Pepper/assistant.
+     * @param bitmap The image to display in the bubble.
      */
-    private fun addMessage(isUser: Boolean, message: String) {
-        // Create a container for the message and timestamp
+    private fun addImageBubble(isUser: Boolean, bitmap: Bitmap) {
         val messageLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
@@ -869,7 +765,65 @@ class MainActivity : AppCompatActivity(),
             }
         }
 
-        // Message TextView
+        val imageView = ImageView(this).apply {
+            setImageBitmap(bitmap)
+            // Adjust size or scale as needed
+            layoutParams = LinearLayout.LayoutParams(400, 400).apply {
+                // optional margins, etc.
+            }
+            // Optionally apply background or padding for a bubble look
+            // setBackgroundResource(R.drawable.right_bubble_background)
+            setPadding(20, 12, 20, 12)
+        }
+
+        // Timestamp below the image
+        val timestampTextView = TextView(this).apply {
+            text = getCurrentTimestamp()
+            textSize = 12f
+            setTextColor(getColor(android.R.color.darker_gray))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.END
+            }
+        }
+
+        messageLayout.addView(imageView)
+        messageLayout.addView(timestampTextView)
+        messageContainer.addView(messageLayout)
+
+        scrollView.post { scrollView.smoothScrollTo(0, scrollView.bottom) }
+    }
+
+
+    /**
+     * Add a message bubble to the UI.
+     * @param isUser: whether it's user or Pepper
+     * @param message: the text to display
+     */
+    /**
+     * Adds a text message bubble to the UI.
+     *
+     * @param isUser True if this is the user’s message; false if it’s Pepper/assistant.
+     * @param message The text to display in the bubble.
+     */
+    private fun addMessage(isUser: Boolean, message: String) {
+        // A vertical container for text bubble + timestamp
+        val messageLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = if (isUser) Gravity.END else Gravity.START
+                topMargin = 12
+                marginStart = if (isUser) 100 else 20
+                marginEnd = if (isUser) 20 else 100
+            }
+        }
+
+        // The TextView for the message itself
         val messageTextView = TextView(this).apply {
             text = message
             textSize = 16f
@@ -878,7 +832,8 @@ class MainActivity : AppCompatActivity(),
                 if (isUser) getColor(android.R.color.white) else getColor(android.R.color.black)
             )
             setBackgroundResource(
-                if (isUser) R.drawable.right_bubble_background else R.drawable.left_bubble_background
+                if (isUser) R.drawable.right_bubble_background
+                else R.drawable.left_bubble_background
             )
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -886,10 +841,9 @@ class MainActivity : AppCompatActivity(),
             ).apply {
                 bottomMargin = 4
             }
-
         }
 
-        // Timestamp TextView
+        // A small timestamp label below the message bubble
         val timestampTextView = TextView(this).apply {
             text = getCurrentTimestamp()
             textSize = 12f
@@ -902,16 +856,15 @@ class MainActivity : AppCompatActivity(),
             }
         }
 
-        // Add views to the container
+        // Combine them and add to our chat container
         messageLayout.addView(messageTextView)
         messageLayout.addView(timestampTextView)
-
-        // Add the container to the message container
         messageContainer.addView(messageLayout)
 
-        // Smooth scroll to the bottom
+        // Scroll to the bottom so new messages are visible
         scrollView.post { scrollView.smoothScrollTo(0, scrollView.bottom) }
     }
+
     private fun getCurrentTimestamp(): String {
         val currentTime = System.currentTimeMillis()
         val sdf = java.text.SimpleDateFormat("hh:mm a", Locale.getDefault())
