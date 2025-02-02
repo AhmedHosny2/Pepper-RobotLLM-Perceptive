@@ -83,7 +83,7 @@ class MainActivity : AppCompatActivity(),
     }
 
     private val apiKey: String by lazy {
-        "sk-BUMxb1U5tb7_GCSflMR67ihzYDCI7yqGbekCP0KQY1T3BlbkFJ369mt7GouL0cBfVZy1dpT2ZkOLeWtJMYBY_TvVGWAA" // <-- Replace with secured API key retrieval
+        "OPEN-AI-API-KEY" // <-- Replace with secured API key retrieval
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -299,11 +299,10 @@ class MainActivity : AppCompatActivity(),
         val body = RequestBody.create(mediaType, jsonObject.toString())
         Log.d("SendImageToApi", "Request body created.")
         // get api key from build config
-        val API_KEY = "sk-BUMxb1U5tb7_GCSflMR67ihzYDCI7yqGbekCP0KQY1T3BlbkFJ369mt7GouL0cBfVZy1dpT2ZkOLeWtJMYBY_TvVGWAA"
         val request = Request.Builder()
             .url(API_URL)
             .addHeader("Content-Type", "application/json")
-            .addHeader("Authorization", "Bearer $API_KEY")
+            .addHeader("Authorization", "Bearer $apiKey")
             .post(body)
             .build()
 
