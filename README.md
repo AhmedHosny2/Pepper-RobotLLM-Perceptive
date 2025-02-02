@@ -1,4 +1,5 @@
 # Integrating LLM with Pepper Robot
+![IMG_0646](https://github.com/user-attachments/assets/fff47131-3f7e-4e70-b186-64281f6fb295)
 
 This project is a Kotlin-based demo that integrates a large language model (LLM) with a Pepper robot. The app uses OpenAI's API to process images and text, allowing Pepper to interact dynamically with users.
 
